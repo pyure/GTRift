@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "gtrift:block/rift_beacon"
+    }
+  }
+}

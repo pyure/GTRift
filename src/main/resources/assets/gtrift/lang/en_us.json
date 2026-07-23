@@ -1,0 +1,13 @@
+{
+  "item.gtrift.ferrous_rift_shard": "Ferrous Rift Shard",
+  "item.gtrift.conductive_rift_shard": "Conductive Rift Shard",
+  "item.gtrift.precious_rift_shard": "Precious Rift Shard",
+
+  "gtrift.richness.sparse": "Sparse",
+  "gtrift.richness.normal": "Normal",
+  "gtrift.richness.rich": "Rich",
+  "gtrift.richness.extremely_rich": "Extremely Rich",
+
+  "block.gtrift.rift_beacon": "Rift Beacon",
+  "gtceu.machine.rift_beacon.tooltip": "Charges from attached energy hatches, then opens a rift that summons hostile mobs to fight for loot. Casing tier caps the maximum difficulty."
+}

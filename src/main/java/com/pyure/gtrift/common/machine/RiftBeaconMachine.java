@@ -1,0 +1,350 @@
+package com.pyure.gtrift.common.machine;
+
+import com.gregtechceu.gtceu.api.GTValues;
+import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
+import com.gregtechceu.gtceu.api.machine.feature.IFancyUIMachine;
+import com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine;
+import com.gregtechceu.gtceu.common.machine.multiblock.part.EnergyHatchPartMachine;
+
+import com.pyure.gtrift.common.config.GTRiftConfig;
+
+import com.lowdragmc.lowdraglib.gui.texture.ColorRectTexture;
+import com.lowdragmc.lowdraglib.gui.widget.ButtonWidget;
+import com.lowdragmc.lowdraglib.gui.widget.ImageWidget;
+import com.lowdragmc.lowdraglib.gui.widget.LabelWidget;
+import com.lowdragmc.lowdraglib.gui.widget.Widget;
+import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
+import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
+import com.lowdragmc.lowdraglib.syncdata.annotation.Persisted;
+import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.DustParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
+
+import org.joml.Vector3f;
+
+public class RiftBeaconMachine extends MultiblockControllerMachine implements IFancyUIMachine {
+
+    // Mob.checkDespawn() only makes a hostile mob despawn-eligible once its noActionTime exceeds
+    // 600 ticks (30s), then rolls a 1/800 chance per tick beyond the 32-block "safe" radius. We
+    // periodically reset noActionTime to 0 for every mob in the beacon's area (in quadrants, to
+    // spread the cost) to keep rift mobs alive while a rift is open. The 0.9 margin means a full
+    // 4-quadrant cycle finishes at 540 ticks, not 600 — a stationary mob's worst-case gap between
+    // resets stays under the threshold with room to spare, so ordinary tick-order jitter (beaconTick
+    // running a tick later than a mob's own aiStep, a brief server hitch, etc.) can't let a mob
+    // cross into despawn-roll eligibility before its quadrant comes back around.
+    private static final int DESPAWN_THRESHOLD_TICKS = 600;
+    private static final double DESPAWN_SAFETY_MARGIN = 0.9;
+    private static final int QUADRANT_COUNT = 4;
+    private static final int TICKS_PER_QUADRANT =
+            (int) (DESPAWN_THRESHOLD_TICKS * DESPAWN_SAFETY_MARGIN) / QUADRANT_COUNT;
+
+    // Persistent rift-open visual: a short twisting stack of rotating particle rings anchored
+    // somewhere out in the spawn ring (not at the beacon) — see emitRiftVisual(). Tuned up twice
+    // after in-game looks: first pass made it denser/taller/faster-refreshing, but particles still
+    // had no actual sideways velocity (sendParticles randomizes offset/speed as jitter unless
+    // count=0, in which case they're an exact velocity vector — see emitRiftVisual), so nothing
+    // visibly rotated. VISUAL_ROTATION_SPEED/LIFT are the real per-particle tangential velocity.
+    private static final int VISUAL_EFFECT_INTERVAL_TICKS = 2;
+    private static final float VISUAL_ROTATION_STEP_DEGREES = 10f; // ~5°/tick vs original 4°/tick
+    private static final double VISUAL_RING_RADIUS = 1.2;
+    private static final int VISUAL_RING_PARTICLE_COUNT = 10;
+    private static final int VISUAL_RING_COUNT = 6; // was 3 — doubles both height and density
+    private static final double VISUAL_RING_HEIGHT_STEP = 0.8;
+    private static final double VISUAL_ROTATION_SPEED = 0.15;
+    private static final double VISUAL_ROTATION_LIFT = 0.02; // slight upward push against portal's own fall
+    private static final int VISUAL_PARTICLES_PER_POINT = 2;
+    private static final double VISUAL_CRIMSON_MIX_CHANCE = 0.10;
+    private static final Vector3f VISUAL_CRIMSON_COLOR = new Vector3f(0.55f, 0.05f, 0.08f);
+    private static final float VISUAL_CRIMSON_SCALE = 1.2f; // the requested 20% larger
+
+    // Every class level that adds its own @Persisted/@DescSynced fields must declare and return
+    // its own merged holder — MetaMachine/MultiblockControllerMachine each do the same. Skipping
+    // this means getFieldHolder() dispatches to MultiblockControllerMachine's version, which knows
+    // nothing about fields declared here, so @DescSynced silently never syncs to the client
+    // (found by comparing server vs. client log output — tier read back as -1 on the client only).
+    protected static final ManagedFieldHolder MANAGED_FIELD_HOLDER =
+            new ManagedFieldHolder(RiftBeaconMachine.class, MultiblockControllerMachine.MANAGED_FIELD_HOLDER);
+
+    /** GT voltage tier detected from the casings used in this structure. -1 while unformed. */
+    @Persisted
+    @DescSynced
+    public int tier = -1;
+
+    @Persisted
+    @DescSynced
+    public BeaconState state = BeaconState.IDLE;
+
+    /** -1 means "never configured" — set to the beacon's own tier on first formation. */
+    @Persisted
+    @DescSynced
+    public int selectedDifficultyTier = -1;
+
+    @Persisted
+    @DescSynced
+    public int selectedDurationMinutes = 5;
+
+    @Persisted
+    @DescSynced
+    public long chargeStored = 0;
+
+    @Persisted
+    @DescSynced
+    public long chargeTarget = 0;
+
+    /** Not persisted — resetting the spawn cadence on chunk reload is harmless. */
+    private int spawnTimerTicks = 0;
+
+    /** Not persisted — same reasoning as spawnTimerTicks. */
+    private int quadrantRefreshTicks = 0;
+    private int currentQuadrant = 0;
+
+    /**
+     * Persisted (not DescSynced — nothing client-side reads this directly; particle emission is
+     * already broadcast server->client independently via sendParticles) so the visible tear stays
+     * at the same spot across a reload instead of jumping to a new random position. Confirmed
+     * BlockPos is natively supported by @Persisted via GTCEu's own precedent —
+     * MEPatternBufferProxyPartMachine.bufferPos is a plain "private BlockPos" field with exactly
+     * this annotation, no special handling needed.
+     */
+    @Persisted
+    public BlockPos riftVisualPos = null;
+
+    /** Not persisted — cosmetic only, resetting phase/cadence on reload is harmless. */
+    private float riftVisualAngle = 0f;
+    private int visualEffectTicks = 0;
+
+    public RiftBeaconMachine(IMachineBlockEntity holder) {
+        super(holder);
+    }
+
+    @Override
+    public ManagedFieldHolder getFieldHolder() {
+        return MANAGED_FIELD_HOLDER;
+    }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (getLevel() != null && !getLevel().isClientSide()) {
+            subscribeServerTick(this::beaconTick);
+
+            // Safety net only, now that riftVisualPos is @Persisted — should rarely trigger (e.g. a
+            // save from before this field existed). It's only ever assigned at the CHARGING ->
+            // RIFT_OPEN transition, which won't happen again until the next full charge cycle, so
+            // without either persistence or this fallback, a reload mid-rift would leave it null
+            // forever for the rest of that rift and the visual would never reappear.
+            if (state == BeaconState.RIFT_OPEN && riftVisualPos == null && getLevel() instanceof ServerLevel serverLevel) {
+                riftVisualPos = RiftEventSpawner.findSpawnPosition(serverLevel, getPos(), serverLevel.getRandom());
+                if (riftVisualPos == null) {
+                    riftVisualPos = getPos();
+                }
+            }
+        }
+    }
+
+    @Override
+    public void onStructureFormed() {
+        super.onStructureFormed();
+        Integer matchedTier = getMultiblockState().getMatchContext().get(RiftBeaconTierPredicate.MATCH_CONTEXT_KEY);
+        this.tier = matchedTier != null ? matchedTier : GTValues.LV;
+        // First formation ever: default to the beacon's own max tier. Reformation at a lower
+        // tier than previously selected: clamp down. Reformation at an equal/higher tier: keep
+        // the player's prior choice rather than forcing it back up.
+        if (selectedDifficultyTier < 0 || selectedDifficultyTier > tier) {
+            selectedDifficultyTier = tier;
+        }
+    }
+
+    @Override
+    public void onStructureInvalid() {
+        super.onStructureInvalid();
+        this.tier = -1;
+        this.state = BeaconState.IDLE;
+        this.chargeStored = 0;
+        this.chargeTarget = 0;
+    }
+
+    private void adjustDifficulty(int delta) {
+        if (!isFormed() || state != BeaconState.IDLE) return;
+        selectedDifficultyTier = Math.max(GTValues.ULV, Math.min(tier, selectedDifficultyTier + delta));
+    }
+
+    private void adjustDuration(int delta) {
+        if (!isFormed() || state != BeaconState.IDLE) return;
+        selectedDurationMinutes = Math.max(1, Math.min(60, selectedDurationMinutes + delta));
+    }
+
+    private long computeChargeTarget() {
+        return GTValues.VA[selectedDifficultyTier] * 20L * 60L * selectedDurationMinutes;
+    }
+
+    private void tryAccept() {
+        if (!isFormed() || state != BeaconState.IDLE) return;
+        chargeTarget = computeChargeTarget();
+        chargeStored = 0;
+        state = BeaconState.CHARGING;
+    }
+
+    private void beaconTick() {
+        if (state == BeaconState.CHARGING) {
+            for (var part : getParts()) {
+                if (!(part.self() instanceof EnergyHatchPartMachine energyHatch)) continue;
+                long remaining = chargeTarget - chargeStored;
+                if (remaining <= 0) break;
+                long toDrain = Math.min(energyHatch.energyContainer.getEnergyStored(), remaining);
+                if (toDrain > 0) {
+                    energyHatch.energyContainer.removeEnergy(toDrain);
+                    chargeStored += toDrain;
+                }
+            }
+            if (chargeStored >= chargeTarget) {
+                chargeStored = chargeTarget;
+                // CHARGED is an instantaneous pass-through, not a lingering state — see Phase 5
+                // plan notes. Both assignments happen within this one tick; only the final value
+                // (RIFT_OPEN) is ever observably synced to the client.
+                state = BeaconState.CHARGED;
+                state = BeaconState.RIFT_OPEN;
+                spawnTimerTicks = 0;
+                quadrantRefreshTicks = 0;
+                currentQuadrant = 0;
+                riftVisualAngle = 0f;
+                visualEffectTicks = 0;
+
+                // The rift-open visual anchors somewhere out in the spawn ring — the actual tear
+                // mobs are pouring through, not a decoration on the beacon itself. Falls back to
+                // the beacon's own position only if the ring is misconfigured (radius <= buffer).
+                if (getLevel() instanceof ServerLevel serverLevel) {
+                    riftVisualPos = RiftEventSpawner.findSpawnPosition(serverLevel, getPos(), serverLevel.getRandom());
+                    if (riftVisualPos == null) {
+                        riftVisualPos = getPos();
+                    }
+                }
+            }
+        } else if (state == BeaconState.RIFT_OPEN) {
+            chargeStored = Math.max(0, chargeStored - GTValues.VA[selectedDifficultyTier]);
+
+            if (getLevel() instanceof ServerLevel serverLevel) {
+                spawnTimerTicks--;
+                if (spawnTimerTicks <= 0) {
+                    RiftEventSpawner.trySpawnMob(serverLevel, getPos(), selectedDifficultyTier, riftVisualPos);
+                    spawnTimerTicks = GTRiftConfig.INSTANCE.spawnIntervalTicks;
+                }
+
+                quadrantRefreshTicks--;
+                if (quadrantRefreshTicks <= 0) {
+                    RiftEventSpawner.refreshQuadrant(serverLevel, getPos(), currentQuadrant);
+                    currentQuadrant = (currentQuadrant + 1) % QUADRANT_COUNT;
+                    quadrantRefreshTicks = TICKS_PER_QUADRANT;
+                }
+
+                visualEffectTicks--;
+                if (visualEffectTicks <= 0 && riftVisualPos != null) {
+                    emitRiftVisual(serverLevel, riftVisualPos, riftVisualAngle);
+                    riftVisualAngle += VISUAL_ROTATION_STEP_DEGREES;
+                    visualEffectTicks = VISUAL_EFFECT_INTERVAL_TICKS;
+                }
+            }
+
+            if (chargeStored <= 0) {
+                chargeStored = 0;
+                chargeTarget = 0;
+                state = BeaconState.IDLE;
+                riftVisualPos = null;
+            }
+        }
+    }
+
+    /**
+     * A short twisting stack of rotating particle rings — reads as a vertical tear rather than a
+     * flat disc or a shapeless scatter. Each ring's rotation phase is offset from its neighbors so
+     * the whole column appears to twist, not just spin as one rigid piece.
+     */
+    private static void emitRiftVisual(ServerLevel level, BlockPos center, float baseAngleDegrees) {
+        double centerX = center.getX() + 0.5;
+        double centerZ = center.getZ() + 0.5;
+        double baseY = center.getY() + 1.0;
+        var random = level.getRandom();
+
+        for (int ring = 0; ring < VISUAL_RING_COUNT; ring++) {
+            double ringAngle = Math.toRadians(baseAngleDegrees + ring * (360.0 / VISUAL_RING_COUNT));
+            double y = baseY + ring * VISUAL_RING_HEIGHT_STEP;
+            for (int i = 0; i < VISUAL_RING_PARTICLE_COUNT; i++) {
+                double theta = ringAngle + i * (2 * Math.PI / VISUAL_RING_PARTICLE_COUNT);
+                double x = centerX + Math.cos(theta) * VISUAL_RING_RADIUS;
+                double z = centerZ + Math.sin(theta) * VISUAL_RING_RADIUS;
+
+                if (random.nextDouble() < VISUAL_CRIMSON_MIX_CHANCE) {
+                    // Left static (no velocity) on purpose — confirmed in-game the static/moving
+                    // contrast against the rotating portal particles reads well, don't "fix" it.
+                    level.sendParticles(new DustParticleOptions(VISUAL_CRIMSON_COLOR, VISUAL_CRIMSON_SCALE),
+                            x, y, z, VISUAL_PARTICLES_PER_POINT, 0.0, 0.0, 0.0, 0.0);
+                } else {
+                    // Tangent direction (perpendicular to the radius, pointing the way theta
+                    // increases) gives each particle real circular velocity. sendParticles only
+                    // honors an exact (xOffset,yOffset,zOffset)*speed velocity vector when count=0
+                    // (confirmed in ClientPacketListener#handleParticleEvent) — with count>0 those
+                    // same fields become random gaussian jitter instead, which is why the previous
+                    // version showed no visible rotation, just portal's own gravity-driven fall.
+                    double tangentX = -Math.sin(theta);
+                    double tangentZ = Math.cos(theta);
+                    for (int p = 0; p < VISUAL_PARTICLES_PER_POINT; p++) {
+                        double jitterX = x + (random.nextDouble() - 0.5) * 0.1;
+                        double jitterZ = z + (random.nextDouble() - 0.5) * 0.1;
+                        level.sendParticles(ParticleTypes.PORTAL, jitterX, y, jitterZ, 0,
+                                tangentX, VISUAL_ROTATION_LIFT, tangentZ, VISUAL_ROTATION_SPEED);
+                    }
+                }
+            }
+        }
+    }
+
+    private String statusText() {
+        return switch (state) {
+            case IDLE -> "EU required: " + computeChargeTarget();
+            case CHARGING -> {
+                long pct = chargeTarget > 0 ? chargeStored * 100 / chargeTarget : 0;
+                // LabelWidget text is routed through I18n.get -> String.format, so a bare "%" (not
+                // part of a valid conversion) throws and renders as "Format error: ..." — escape it.
+                yield "Charging: " + chargeStored + " / " + chargeTarget + " (" + pct + "%%)";
+            }
+            case CHARGED -> "Charged — awaiting rift";
+            case RIFT_OPEN -> {
+                long pct = chargeTarget > 0 ? chargeStored * 100 / chargeTarget : 0;
+                yield "Rift open: " + chargeStored + " / " + chargeTarget + " EU remaining (" + pct + "%%)";
+            }
+        };
+    }
+
+    @Override
+    public Widget createUIWidget() {
+        WidgetGroup group = new WidgetGroup(0, 0, 176, 100);
+        // Background — must be the first child so it renders behind the labels, otherwise the
+        // panel is just bare text with nothing to signal a GUI is even open (found this the hard way).
+        group.addWidget(new ImageWidget(0, 0, 176, 100, new ColorRectTexture(0xFF1A1A1A)));
+        group.addWidget(new LabelWidget(10, 8, () -> isFormed() ? "Formed: yes" : "Formed: no"));
+        group.addWidget(new LabelWidget(10, 20, () -> isFormed() ? "Tier: " + GTValues.VN[tier] : ""));
+
+        group.addWidget(new ButtonWidget(10, 34, 12, 12, cd -> adjustDifficulty(-1)));
+        group.addWidget(new LabelWidget(14, 36, "-"));
+        group.addWidget(new LabelWidget(28, 36,
+                () -> "Difficulty: " + (selectedDifficultyTier >= 0 ? GTValues.VN[selectedDifficultyTier] : "-")));
+        group.addWidget(new ButtonWidget(150, 34, 12, 12, cd -> adjustDifficulty(1)));
+        group.addWidget(new LabelWidget(154, 36, "+"));
+
+        group.addWidget(new ButtonWidget(10, 49, 12, 12, cd -> adjustDuration(-1)));
+        group.addWidget(new LabelWidget(14, 51, "-"));
+        group.addWidget(new LabelWidget(28, 51, () -> "Duration: " + selectedDurationMinutes + " min"));
+        group.addWidget(new ButtonWidget(150, 49, 12, 12, cd -> adjustDuration(1)));
+        group.addWidget(new LabelWidget(154, 51, "+"));
+
+        group.addWidget(new LabelWidget(10, 66, this::statusText));
+
+        group.addWidget(new ButtonWidget(10, 80, 60, 16, cd -> tryAccept()));
+        group.addWidget(new LabelWidget(20, 84, "Accept"));
+
+        return group;
+    }
+}

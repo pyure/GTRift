@@ -1,0 +1,148 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.neoforged.moddev.legacyforge' version '2.0.91'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+sourceSets {
+    // GameTest classes need main on their classpath; see src/test/README.md.
+    test {
+        compileClasspath += main.output + main.compileClasspath
+        runtimeClasspath += main.output + main.runtimeClasspath
+    }
+}
+
+legacyForge {
+    version = "${minecraft_version}-${forge_version}"
+
+    // Gives the test source set the same Forge/Minecraft dependencies as main.
+    addModdingDependenciesTo(sourceSets.test)
+
+    runs {
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            systemProperty 'forge.logging.console.level', 'debug'
+            // Lets /test run gtrift:... work from any run, not just the dedicated gameTestServer one.
+            systemProperty('forge.enabledGameTestNamespaces', mod_id)
+        }
+        client {
+            client()
+            sourceSet = sourceSets.main
+        }
+        server {
+            server()
+            sourceSet = sourceSets.main
+            programArguments.addAll('--nogui')
+        }
+        // Launches GameTestServer, runs all registered gametests, then exits.
+        // Crashes if no gametests are registered yet — that's expected until the first test lands.
+        gameTestServer {
+            type = "gameTestServer"
+            sourceSet = sourceSets.test
+            gameDirectory.set(file('run/gametest'))
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+            sourceSet(sourceSets.test)
+        }
+    }
+}
+
+repositories {
+    maven {
+        name = 'GTCEu Maven'
+        url = 'https://maven.gtceu.com'
+        content {
+            includeGroup 'com.gregtechceu.gtceu'
+        }
+    }
+    maven {
+        name = 'LDLib'
+        url = 'https://maven.firstdark.dev/snapshots'
+        content {
+            includeGroup 'com.lowdragmc.ldlib'
+        }
+    }
+    maven {
+        name = 'Registrate'
+        url = 'https://maven.tterrag.com/'
+        content {
+            includeGroup 'com.tterrag.registrate'
+        }
+    }
+    maven {
+        name = 'Configuration'
+        url = 'https://repo.repsy.io/mvn/toma/public/'
+        content {
+            includeGroup 'dev.toma.configuration'
+        }
+    }
+    maven {
+        name = 'BlameJared'
+        url = 'https://maven.blamejared.com/'
+        content {
+            includeGroup 'mezz.jei'
+        }
+    }
+    maven {
+        url = 'https://cursemaven.com/'
+        content {
+            includeGroup 'curse.maven'
+        }
+    }
+}
+
+
+dependencies {
+    // GTCEu slim jar — no embedded transitives; declare them explicitly below
+    modImplementation("com.gregtechceu.gtceu:gtceu-1.20.1:${gtceu_version}:slim") { transitive = false }
+    modImplementation("com.lowdragmc.ldlib:ldlib-forge-1.20.1:${ldlib_version}") { transitive = false }
+    modImplementation("com.tterrag.registrate:Registrate:${registrate_version}")
+    modImplementation("dev.toma.configuration:configuration-1.20.1:${configuration_version}") { transitive = false }
+
+    // JEI — API jars for compilation; full jar as modImplementation so ModDevGradle
+    // remaps it correctly for the dev environment (bypassing the remapper via run/mods/ breaks it)
+    modCompileOnly("mezz.jei:jei-1.20.1-forge-api:${jei_version}")
+    modCompileOnly("mezz.jei:jei-1.20.1-common-api:${jei_version}")
+    modImplementation("mezz.jei:jei-1.20.1-forge:${jei_version}") { transitive = false }
+
+    // Jade — full jar via modImplementation so ModDevGradle remaps it for dev runs
+    modImplementation("curse.maven:jade-324717:${jade_file_id}") { transitive = false }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            forge_version          : forge_version,
+            forge_version_range    : forge_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description,
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
