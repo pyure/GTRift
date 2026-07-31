@@ -1,7 +1,5 @@
 {
-  "item.gtrift.ferrous_rift_shard": "Ferrous Rift Shard",
-  "item.gtrift.conductive_rift_shard": "Conductive Rift Shard",
-  "item.gtrift.precious_rift_shard": "Precious Rift Shard",
+  "item.gtrift.diamond_shard": "Diamond Rift Shard",
 
   "gtrift.richness.sparse": "Sparse",
   "gtrift.richness.normal": "Normal",

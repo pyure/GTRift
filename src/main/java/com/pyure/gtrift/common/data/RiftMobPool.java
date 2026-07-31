@@ -10,9 +10,19 @@ public class RiftMobPool {
     public static final RiftMobPool ELITE = new RiftMobPool();
 
     private List<RiftMobPoolEntry> entries = List.of();
+    private List<String> issues = List.of();
 
     public void setEntries(List<RiftMobPoolEntry> entries) {
         this.entries = List.copyOf(entries);
+    }
+
+    /** Replaced wholesale on every reload (not accumulated) — reflects only the most recent load. */
+    public void setIssues(List<String> issues) {
+        this.issues = List.copyOf(issues);
+    }
+
+    public List<String> issues() {
+        return issues;
     }
 
     public RiftMobPoolEntry pickRandom(RandomSource random) {

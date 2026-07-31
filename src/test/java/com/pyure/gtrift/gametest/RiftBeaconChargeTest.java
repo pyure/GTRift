@@ -11,6 +11,7 @@ import com.gregtechceu.gtceu.common.machine.multiblock.part.EnergyHatchPartMachi
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
@@ -39,6 +40,16 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
  * delay that passed reliably at 8 concurrent tests started intermittently failing at 12 (a
  * sibling test using the exact same structure file, under the same batch run). Polling for the
  * actual condition (isFormed(), chargeStored > 0, state transitions) has no such race.
+ *
+ * Reaching RIFT_OPEN for real fires one genuine RiftEventSpawner.trySpawnMob call from the beacon's
+ * own tick loop (spawnTimerTicks resets to 0 on the CHARGING -> RIFT_OPEN transition, so the very
+ * first RIFT_OPEN tick's countdown check always fires) — against the real, unmodified RiftMobPool,
+ * with the real elite-chance roll. If that roll is elite, it registers with RiftEliteTracker's
+ * shared static map; left alone, that entry lingers for the rest of the batch and intermittently
+ * fails whatever OTHER test happens to check RiftEliteTracker.trackedCount() in the same run (this
+ * is what was actually causing RiftEliteTrackerTest's ~50% flake rate, confirmed by tracing the
+ * spawnTimerTicks reset — nothing to do with that test's own logic). killAllEntitiesOfClass cleans
+ * up whatever this test's own beacon spawned, elite or not, before the batch moves on.
  */
 @PrefixGameTestTemplate(false)
 @GameTestHolder(GTRift.MOD_ID)
@@ -103,6 +114,9 @@ public class RiftBeaconChargeTest {
                     helper.assertTrue(beacon.state == BeaconState.RIFT_OPEN,
                             "expected RIFT_OPEN immediately after CHARGING, got %s".formatted(beacon.state));
                 })
+                // See class doc — RIFT_OPEN always fires one real spawn attempt; clean it up so a
+                // stray elite doesn't leak into RiftEliteTracker's shared state for other tests.
+                .thenExecute(() -> helper.killAllEntitiesOfClass(Mob.class))
                 .thenSucceed();
     }
 }

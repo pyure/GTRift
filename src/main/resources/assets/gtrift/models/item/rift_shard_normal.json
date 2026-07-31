@@ -1,6 +1,6 @@
 {
   "parent": "item/generated",
   "textures": {
-    "layer0": "gtrift:item/precious_rift_shard"
+    "layer0": "gtrift:item/rift_shard_normal"
   }
 }

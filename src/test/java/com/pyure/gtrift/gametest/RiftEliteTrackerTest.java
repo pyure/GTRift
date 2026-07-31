@@ -65,8 +65,15 @@ public class RiftEliteTrackerTest {
                     zombie.kill();
                     LOGGER.info("checkpoint 1: killed zombie, isAlive={}", zombie.isAlive());
                 })
-                .thenExecuteAfter(2, () -> {
-                    LOGGER.info("checkpoint 2: isAlive={}, bossBarPlayers={}, trackedCount={}",
+                // RiftEliteTracker's cleanup runs on Forge's own ServerTickEvent.END, a separate
+                // tick-driven system from GameTestSequence's internal tick counter — a fixed
+                // thenExecuteAfter(N) assumes those two stay in lockstep, which isn't guaranteed
+                // once concurrent batch size (and therefore per-tick scheduling load) grows. Poll
+                // instead: retries every tick until the assertions stop throwing, same fix already
+                // applied to other fixed-delay flakes in this project (see CLAUDE.md's GameTest
+                // testing notes).
+                .thenWaitUntil(() -> {
+                    LOGGER.info("polling: isAlive={}, bossBarPlayers={}, trackedCount={}",
                             zombie.isAlive(), bossEvent.getPlayers().size(), RiftEliteTracker.trackedCount());
                     helper.assertTrue(bossEvent.getPlayers().isEmpty(),
                             "boss bar still had players registered after the tracked entity died");

@@ -1,10 +1,12 @@
 package com.pyure.gtrift.common.machine;
 
 import com.pyure.gtrift.common.config.GTRiftConfig;
+import com.pyure.gtrift.common.data.RiftDropEntry;
 import com.pyure.gtrift.common.data.RiftMobPool;
 import com.pyure.gtrift.common.data.RiftMobPoolEntry;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +29,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 
+import java.util.List;
+
 public class RiftEventSpawner {
 
     private static final int POSITION_CANDIDATES = 5;
@@ -41,21 +45,21 @@ public class RiftEventSpawner {
      * used to slant spawn angles toward it — null is valid (no rift open, or Phase 8 visual disabled
      * some other way) and simply disables the angular slant for this call.
      */
-    public static void trySpawnMob(ServerLevel level, BlockPos beaconPos, int difficultyTier,
-                                    BlockPos riftDirectionPos) {
+    public static Mob trySpawnMob(ServerLevel level, BlockPos beaconPos, int difficultyTier,
+                                   BlockPos riftDirectionPos) {
         RandomSource random = level.getRandom();
 
         double eliteChance = Math.min(0.25, 0.05 + 0.02 * difficultyTier);
         boolean isElite = random.nextDouble() < eliteChance;
         RiftMobPool pool = isElite ? RiftMobPool.ELITE : RiftMobPool.NORMAL;
         RiftMobPoolEntry entry = pool.pickRandom(random);
-        if (entry == null) return;
+        if (entry == null) return null;
 
         BlockPos spawnPos = findSpawnPosition(level, beaconPos, random, riftDirectionPos);
-        if (spawnPos == null) return;
+        if (spawnPos == null) return null;
 
         Entity spawned = entry.entityType().spawn(level, spawnPos, MobSpawnType.EVENT);
-        if (!(spawned instanceof Mob mob)) return;
+        if (!(spawned instanceof Mob mob)) return null;
 
         applyDifficultyScaling(mob, difficultyTier);
         applyDaylightImmunity(mob, random);
@@ -67,9 +71,33 @@ public class RiftEventSpawner {
         mob.getPersistentData().putBoolean("gtrift_mob", true);
         mob.getPersistentData().putInt("gtrift_tier", difficultyTier);
 
+        // Filtered once here (not at death) since difficultyTier is only known at spawn time and
+        // the mob may outlive the beacon; the loot handler rolls exactly what's serialized below,
+        // with no further tier check needed.
+        List<RiftDropEntry> eligibleDrops = filterEligibleDrops(entry.drops(), difficultyTier);
+        if (!eligibleDrops.isEmpty()) {
+            ListTag dropsTag = new ListTag();
+            for (RiftDropEntry drop : eligibleDrops) {
+                dropsTag.add(drop.toNbt());
+            }
+            mob.getPersistentData().put("gtrift_drops", dropsTag);
+        }
+
         if (isElite) {
             applyEliteTreatment(mob);
         }
+
+        return mob;
+    }
+
+    // Public (not private), pure, and independent of RiftMobPool/entity spawning, so
+    // RiftEventSpawnerDropTest can exercise the minTier gate directly without mutating the global
+    // RiftMobPool singletons — doing that from a test previously leaked stray (occasionally elite)
+    // mobs into other concurrently-running tests that tick a real beacon through RIFT_OPEN (e.g.
+    // RiftEventStateTest), since trySpawnMob reads those pools live and nothing in this class knows
+    // which caller is "just testing".
+    public static List<RiftDropEntry> filterEligibleDrops(List<RiftDropEntry> drops, int difficultyTier) {
+        return drops.stream().filter(drop -> drop.minTier() <= difficultyTier).toList();
     }
 
     // No-slant overload — used for the initial riftVisualPos roll (that call is what DEFINES the
@@ -131,23 +159,28 @@ public class RiftEventSpawner {
         return best;
     }
 
-    private static void applyDifficultyScaling(Mob mob, int difficultyTier) {
-        double multiplier = 1.0 + 0.5 * difficultyTier;
+    // Flat additive bonus per tier, not a shared multiplier — deliberately so stats with very
+    // different base magnitudes scale asymmetrically (health/damage grow much more noticeably than
+    // speed, which has a small vanilla base of ~0.2-0.3).
+    private static final double HEALTH_BONUS_PER_TIER = 5.0;
+    private static final double DAMAGE_BONUS_PER_TIER = 2.0;
+    private static final double SPEED_BONUS_PER_TIER = 0.1;
 
+    private static void applyDifficultyScaling(Mob mob, int difficultyTier) {
         AttributeInstance health = mob.getAttribute(Attributes.MAX_HEALTH);
         if (health != null) {
-            health.setBaseValue(health.getBaseValue() * multiplier);
+            health.setBaseValue(health.getBaseValue() + HEALTH_BONUS_PER_TIER * difficultyTier);
             mob.setHealth(mob.getMaxHealth());
         }
 
         AttributeInstance speed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
         if (speed != null) {
-            speed.setBaseValue(speed.getBaseValue() * multiplier);
+            speed.setBaseValue(speed.getBaseValue() + SPEED_BONUS_PER_TIER * difficultyTier);
         }
 
         AttributeInstance damage = mob.getAttribute(Attributes.ATTACK_DAMAGE);
         if (damage != null) {
-            damage.setBaseValue(damage.getBaseValue() * multiplier);
+            damage.setBaseValue(damage.getBaseValue() + DAMAGE_BONUS_PER_TIER * difficultyTier);
         }
     }
 

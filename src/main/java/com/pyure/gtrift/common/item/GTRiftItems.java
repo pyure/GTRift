@@ -1,36 +1,48 @@
 package com.pyure.gtrift.common.item;
 
 import com.pyure.gtrift.GTRift;
+import com.pyure.gtrift.common.data.ShardType;
+
 import com.tterrag.registrate.util.entry.ItemEntry;
 import net.minecraft.world.item.ItemStack;
 
-import java.util.EnumMap;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class GTRiftItems {
 
-    public static final ItemEntry<RiftShardItem> FERROUS_RIFT_SHARD = GTRift.REGISTRATE
-            .item("ferrous_rift_shard", RiftShardItem::new)
-            .register();
-    public static final ItemEntry<RiftShardItem> CONDUCTIVE_RIFT_SHARD = GTRift.REGISTRATE
-            .item("conductive_rift_shard", RiftShardItem::new)
-            .register();
-    public static final ItemEntry<RiftShardItem> PRECIOUS_RIFT_SHARD = GTRift.REGISTRATE
-            .item("precious_rift_shard", RiftShardItem::new)
-            .register();
+    private static final Logger LOGGER = LogManager.getLogger("gtrift");
 
-    private static final Map<RiftAffinity, ItemEntry<RiftShardItem>> RIFT_SHARDS = new EnumMap<>(RiftAffinity.class);
-    static {
-        RIFT_SHARDS.put(RiftAffinity.FERROUS, FERROUS_RIFT_SHARD);
-        RIFT_SHARDS.put(RiftAffinity.CONDUCTIVE, CONDUCTIVE_RIFT_SHARD);
-        RIFT_SHARDS.put(RiftAffinity.PRECIOUS, PRECIOUS_RIFT_SHARD);
+    /** Keyed by ShardType.sanitizedId(). Populated once by init(), from Phase 1's loaded shard types. */
+    private static final Map<String, ItemEntry<RiftShardItem>> RIFT_SHARDS = new LinkedHashMap<>();
+
+    public static void init() {
+        for (ShardType type : GTRift.SHARD_TYPE_LOAD_RESULT.shardTypes()) {
+            ItemEntry<RiftShardItem> entry = GTRift.REGISTRATE
+                    .item(type.sanitizedId() + "_shard", p -> new RiftShardItem(type, p))
+                    .register();
+            RIFT_SHARDS.put(type.sanitizedId(), entry);
+        }
+        LOGGER.info("Registered {} rift shard item(s)", RIFT_SHARDS.size());
     }
 
-    public static ItemStack createStack(RiftAffinity affinity, RiftRichness richness, int count) {
-        ItemStack stack = new ItemStack(RIFT_SHARDS.get(affinity).get(), count);
+    /** Unmodifiable — for ClientProxy to iterate when wiring rendering for every registered shard item. */
+    public static Map<String, ItemEntry<RiftShardItem>> allShardItems() {
+        return Collections.unmodifiableMap(RIFT_SHARDS);
+    }
+
+    public static ItemStack createStack(String shardTypeId, RiftRichness richness, int count) {
+        ItemEntry<RiftShardItem> entry = RIFT_SHARDS.get(shardTypeId);
+        if (entry == null) {
+            LOGGER.warn("Unknown shard type id '{}', cannot create a stack for it", shardTypeId);
+            return ItemStack.EMPTY;
+        }
+        ItemStack stack = new ItemStack(entry.get(), count);
         RiftShardItem.setRichness(stack, richness);
         return stack;
     }
-
-    public static void init() {}
 }
