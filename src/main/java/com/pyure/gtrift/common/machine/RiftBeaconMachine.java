@@ -345,9 +345,10 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
         return formatEu(chargeStored) + " / " + formatEu(target) + " EU (" + pct + "%%)";
     }
 
-    /** 999 -> "999", 1400 -> "1.4k", 2_400_000 -> "2.4M", 40_000_000_000 -> "40.0B" — a trailing ".0"
-     * is trimmed (e.g. 2_000_000 -> "2M"). B is needed, not just k/M: max tier at a 60-minute duration
-     * can exceed 40 billion EU. */
+    /** 999 -> "999", 1400 -> "1.4k", 2_000_000 -> "2.0M", 40_000_000_000 -> "40.0B" — always one decimal
+     * place, even a trailing ".0", so the string's length stays constant as the value ticks up/down
+     * instead of visually "bouncing" every time it crosses a whole-number boundary. B is needed, not
+     * just k/M: max tier at a 60-minute duration can exceed 40 billion EU. */
     private static String formatEu(long value) {
         if (value < 1_000L) return Long.toString(value);
         if (value < 1_000_000L) return formatWithSuffix(value, 1_000.0, "k");
@@ -356,11 +357,7 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
     }
 
     private static String formatWithSuffix(long value, double divisor, String suffix) {
-        String formatted = String.format(Locale.ROOT, "%.1f", value / divisor);
-        if (formatted.endsWith(".0")) {
-            formatted = formatted.substring(0, formatted.length() - 2);
-        }
-        return formatted + suffix;
+        return String.format(Locale.ROOT, "%.1f", value / divisor) + suffix;
     }
 
     /**
