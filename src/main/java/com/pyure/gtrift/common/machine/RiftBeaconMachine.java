@@ -7,6 +7,7 @@ import com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine;
 import com.gregtechceu.gtceu.common.machine.multiblock.part.EnergyHatchPartMachine;
 
 import com.pyure.gtrift.common.config.GTRiftConfig;
+import com.pyure.gtrift.common.data.RiftMobPool;
 
 import com.lowdragmc.lowdraglib.gui.texture.ColorRectTexture;
 import com.lowdragmc.lowdraglib.gui.widget.ButtonWidget;
@@ -21,7 +22,9 @@ import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 
 import org.joml.Vector3f;
 
@@ -303,7 +306,12 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
 
     private String statusText() {
         return switch (state) {
-            case IDLE -> "EU required: " + computeChargeTarget();
+            // selectedDifficultyTier is -1 until the structure has formed at least once (see its own
+            // field doc) — computeChargeTarget() indexes GTValues.VA by it, so a never-formed
+            // controller's GUI would otherwise throw ArrayIndexOutOfBoundsException the moment it's
+            // opened. IDLE is the only state reachable with a still-unconfigured tier — CHARGING/
+            // CHARGED/RIFT_OPEN are only reachable via tryAccept(), which already requires isFormed().
+            case IDLE -> selectedDifficultyTier >= 0 ? "EU required: " + computeChargeTarget() : "Not formed";
             case CHARGING -> {
                 long pct = chargeTarget > 0 ? chargeStored * 100 / chargeTarget : 0;
                 // LabelWidget text is routed through I18n.get -> String.format, so a bare "%" (not
@@ -318,12 +326,28 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
         };
     }
 
+    /**
+     * A separate label (not appended to statusText()) so it doesn't overflow the GUI's fixed 176px
+     * width on top of the already-long charge-status strings. Empty string renders as nothing, so
+     * this row is silently blank when the current dimension has at least one eligible entry in either
+     * pool. Reads RiftMobPool.NORMAL/ELITE directly — safe because LabelWidget's supplier only ever
+     * runs server-side (LDLib's detectAndSendChanges/writeInitialData), with just the resulting string
+     * synced to the client, so this never sees an unpopulated client-side pool.
+     */
+    private String dimensionWarningText() {
+        if (!(getLevel() instanceof ServerLevel serverLevel)) return "";
+        ResourceKey<Level> dimension = serverLevel.dimension();
+        boolean noEligibleMobs = RiftMobPool.NORMAL.eligibleEntries(dimension).isEmpty()
+                && RiftMobPool.ELITE.eligibleEntries(dimension).isEmpty();
+        return noEligibleMobs ? "No mobs can spawn in this dimension" : "";
+    }
+
     @Override
     public Widget createUIWidget() {
-        WidgetGroup group = new WidgetGroup(0, 0, 176, 100);
+        WidgetGroup group = new WidgetGroup(0, 0, 176, 112);
         // Background — must be the first child so it renders behind the labels, otherwise the
         // panel is just bare text with nothing to signal a GUI is even open (found this the hard way).
-        group.addWidget(new ImageWidget(0, 0, 176, 100, new ColorRectTexture(0xFF1A1A1A)));
+        group.addWidget(new ImageWidget(0, 0, 176, 112, new ColorRectTexture(0xFF1A1A1A)));
         group.addWidget(new LabelWidget(10, 8, () -> isFormed() ? "Formed: yes" : "Formed: no"));
         group.addWidget(new LabelWidget(10, 20, () -> isFormed() ? "Tier: " + GTValues.VN[tier] : ""));
 
@@ -341,9 +365,10 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
         group.addWidget(new LabelWidget(154, 51, "+"));
 
         group.addWidget(new LabelWidget(10, 66, this::statusText));
+        group.addWidget(new LabelWidget(10, 78, this::dimensionWarningText));
 
-        group.addWidget(new ButtonWidget(10, 80, 60, 16, cd -> tryAccept()));
-        group.addWidget(new LabelWidget(20, 84, "Accept"));
+        group.addWidget(new ButtonWidget(10, 92, 60, 16, cd -> tryAccept()));
+        group.addWidget(new LabelWidget(20, 96, "Accept"));
 
         return group;
     }

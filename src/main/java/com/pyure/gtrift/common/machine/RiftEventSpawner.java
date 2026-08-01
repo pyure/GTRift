@@ -52,7 +52,7 @@ public class RiftEventSpawner {
         double eliteChance = Math.min(0.25, 0.05 + 0.02 * difficultyTier);
         boolean isElite = random.nextDouble() < eliteChance;
         RiftMobPool pool = isElite ? RiftMobPool.ELITE : RiftMobPool.NORMAL;
-        RiftMobPoolEntry entry = pool.pickRandom(random);
+        RiftMobPoolEntry entry = pool.pickRandom(random, level.dimension());
         if (entry == null) return null;
 
         BlockPos spawnPos = findSpawnPosition(level, beaconPos, random, riftDirectionPos);

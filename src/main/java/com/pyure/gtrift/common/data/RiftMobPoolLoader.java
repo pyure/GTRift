@@ -11,12 +11,16 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -33,10 +37,12 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Mob pool entries come from two independent sources, merged together:
@@ -69,6 +75,14 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
     private record DefaultEntry(String entityId, int weight, List<DefaultDrop> drops) {}
 
     /**
+     * `fatal` means "skip the whole entry" (mirrors the unknown-entity treatment in parseEntry) — an
+     * unresolvable dimension id is a fatal case, everything else (missing field, "all", empty array,
+     * "all" mixed with ids) just produces a value plus zero or more issue messages.
+     */
+    public record DimensionParseResult(Optional<Set<ResourceKey<Level>>> dimensions, List<String> issues,
+                                        boolean fatal) {}
+
+    /**
      * Illustrative defaults, not a tuned economy: each mob has one common drop (high chance, no tier
      * gate) plus one rarer bonus drop, some of them tier-gated, to demonstrate multiple simultaneous
      * drops, low-chance rarity, and per-tier availability out of the box.
@@ -99,15 +113,27 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
 
     private final String directory;
     private final RiftMobPool target;
+    private final Set<ResourceKey<Level>> validDimensions;
 
     /** Reset fresh at the top of every apply() — a new RiftMobPoolLoader instance is created per
      * reload (see onAddReloadListeners), so this never leaks state across reload cycles. */
     private List<String> issues = new ArrayList<>();
 
-    public RiftMobPoolLoader(String directory, RiftMobPool target) {
+    /**
+     * validDimensions is captured once, at construction (see onAddReloadListeners), from the
+     * RegistryAccess AddReloadListenerEvent already carries — NOT from
+     * ServerLifecycleHooks.getCurrentServer(), which returns null during the very first reload of a
+     * world's startup (that reload runs as part of WorldLoader.load(), strictly before the
+     * MinecraftServer object is constructed). RegistryAccess's dimension/LevelStem data, by contrast,
+     * is resolved earlier still, as part of building that same RegistryAccess — so it's reliably
+     * available even on this first reload. Confirmed the hard way: a real client run showed "Unknown
+     * dimension 'minecraft:overworld'" on world load using the ServerLifecycleHooks approach.
+     */
+    public RiftMobPoolLoader(String directory, RiftMobPool target, Set<ResourceKey<Level>> validDimensions) {
         super(new Gson(), directory);
         this.directory = directory;
         this.target = target;
+        this.validDimensions = validDimensions;
     }
 
     /**
@@ -219,8 +245,17 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
                 issues.add(message);
                 return Optional.empty();
             }
+            DimensionParseResult dimensionResult = parseDimensions(object, directory, source, validDimensions);
+            for (String issue : dimensionResult.issues()) {
+                LOGGER.warn(issue);
+                issues.add(issue);
+            }
+            if (dimensionResult.fatal()) {
+                return Optional.empty();
+            }
+
             List<RiftDropEntry> drops = parseDrops(object, source);
-            return Optional.of(new RiftMobPoolEntry(entityType, weight, drops));
+            return Optional.of(new RiftMobPoolEntry(entityType, weight, drops, dimensionResult.dimensions()));
         } catch (Exception e) {
             String message = "[%s] Failed to parse %s, skipping: %s".formatted(directory, source, e.getMessage());
             LOGGER.warn(message);
@@ -278,9 +313,64 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
         return GTValues.ULV;
     }
 
+    /**
+     * Pure and public — no dependency on `this.issues`/`this.directory` or the reload-listener
+     * instance — so it can be exercised directly by a GameTest with a synthetic valid-dimension set,
+     * and so Phase 4's JEI plugin can reuse it against config-folder files read outside the normal
+     * reload cycle. "directory" is only used to prefix log/issue messages, matching every other
+     * message format in this class.
+     */
+    public static DimensionParseResult parseDimensions(JsonObject object, String directory, String source,
+                                                         Set<ResourceKey<Level>> validDimensions) {
+        List<String> issues = new ArrayList<>();
+        if (!object.has("dimensions")) {
+            return new DimensionParseResult(Optional.empty(), issues, false);
+        }
+
+        JsonElement element = object.get("dimensions");
+        List<String> rawIds = new ArrayList<>();
+        if (element.isJsonPrimitive()) {
+            rawIds.add(element.getAsString());
+        } else {
+            for (JsonElement item : element.getAsJsonArray()) {
+                rawIds.add(item.getAsString());
+            }
+        }
+
+        if (rawIds.isEmpty()) {
+            return new DimensionParseResult(Optional.of(Set.of()), issues, false);
+        }
+
+        boolean hasAll = rawIds.stream().anyMatch(id -> id.equalsIgnoreCase("all"));
+        if (hasAll) {
+            if (rawIds.size() > 1) {
+                issues.add("[%s] \"dimensions\" mixes \"all\" with specific ids in %s, ignoring the ids and treating as \"all\""
+                        .formatted(directory, source));
+            }
+            return new DimensionParseResult(Optional.empty(), issues, false);
+        }
+
+        Set<ResourceKey<Level>> keys = new HashSet<>();
+        for (String rawId : rawIds) {
+            ResourceKey<Level> key = ResourceKey.create(Registries.DIMENSION, new ResourceLocation(rawId));
+            if (!validDimensions.contains(key)) {
+                issues.add("[%s] Unknown dimension '%s' in %s, skipping entry".formatted(directory, rawId, source));
+                return new DimensionParseResult(Optional.empty(), issues, true);
+            }
+            keys.add(key);
+        }
+        return new DimensionParseResult(Optional.of(Set.copyOf(keys)), issues, false);
+    }
+
     @SubscribeEvent
     public static void onAddReloadListeners(AddReloadListenerEvent event) {
-        event.addListener(new RiftMobPoolLoader("rift_mobs", RiftMobPool.NORMAL));
-        event.addListener(new RiftMobPoolLoader("rift_elite_mobs", RiftMobPool.ELITE));
+        Set<ResourceKey<Level>> validDimensions = new HashSet<>();
+        for (ResourceKey<LevelStem> levelStemKey : event.getRegistryAccess().registryOrThrow(Registries.LEVEL_STEM)
+                .registryKeySet()) {
+            validDimensions.add(Registries.levelStemToLevel(levelStemKey));
+        }
+
+        event.addListener(new RiftMobPoolLoader("rift_mobs", RiftMobPool.NORMAL, validDimensions));
+        event.addListener(new RiftMobPoolLoader("rift_elite_mobs", RiftMobPool.ELITE, validDimensions));
     }
 }

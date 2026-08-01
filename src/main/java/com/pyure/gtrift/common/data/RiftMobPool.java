@@ -1,6 +1,8 @@
 package com.pyure.gtrift.common.data;
 
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.Level;
 
 import java.util.List;
 
@@ -26,14 +28,31 @@ public class RiftMobPool {
     }
 
     public RiftMobPoolEntry pickRandom(RandomSource random) {
-        if (entries.isEmpty()) return null;
-        int totalWeight = entries.stream().mapToInt(RiftMobPoolEntry::weight).sum();
+        return pickRandom(entries, random);
+    }
+
+    public RiftMobPoolEntry pickRandom(RandomSource random, ResourceKey<Level> dimension) {
+        return pickRandom(eligibleEntries(dimension), random);
+    }
+
+    /**
+     * Entries eligible for the given dimension, weight/RNG untouched — exposed separately (not just
+     * inlined into pickRandom) so eligibility can be queried without a roll, both for pure-logic
+     * testing and for the controller GUI's "any mobs configured here" check.
+     */
+    public List<RiftMobPoolEntry> eligibleEntries(ResourceKey<Level> dimension) {
+        return entries.stream().filter(entry -> entry.isEligibleFor(dimension)).toList();
+    }
+
+    private static RiftMobPoolEntry pickRandom(List<RiftMobPoolEntry> candidates, RandomSource random) {
+        if (candidates.isEmpty()) return null;
+        int totalWeight = candidates.stream().mapToInt(RiftMobPoolEntry::weight).sum();
         if (totalWeight <= 0) return null;
         int roll = random.nextInt(totalWeight);
-        for (RiftMobPoolEntry entry : entries) {
+        for (RiftMobPoolEntry entry : candidates) {
             roll -= entry.weight();
             if (roll < 0) return entry;
         }
-        return entries.get(entries.size() - 1);
+        return candidates.get(candidates.size() - 1);
     }
 }
