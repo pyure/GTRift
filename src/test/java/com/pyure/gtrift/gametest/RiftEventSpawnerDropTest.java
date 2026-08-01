@@ -2,7 +2,7 @@ package com.pyure.gtrift.gametest;
 
 import com.pyure.gtrift.GTRift;
 import com.pyure.gtrift.common.data.RiftDropEntry;
-import com.pyure.gtrift.common.item.RiftRichness;
+import com.pyure.gtrift.common.item.RiftQuality;
 import com.pyure.gtrift.common.machine.RiftEventSpawner;
 
 import com.gregtechceu.gtceu.api.GTValues;
@@ -33,11 +33,11 @@ public class RiftEventSpawnerDropTest {
     @GameTest(template = "empty")
     public static void onlyDropsAtOrBelowDifficultyTierSurvive(GameTestHelper helper) {
         RiftDropEntry ulvDrop = new RiftDropEntry(
-                "ferrous", RiftRichness.NORMAL, GTValues.ULV, 1.0, 1, 1, 1.0, 1.0);
+                "ferrous", RiftQuality.NORMAL, GTValues.ULV, 1.0, 1, 1, 1.0, 1.0);
         RiftDropEntry lvDrop = new RiftDropEntry(
-                "conductive", RiftRichness.NORMAL, GTValues.LV, 1.0, 1, 1, 1.0, 1.0);
+                "conductive", RiftQuality.NORMAL, GTValues.LV, 1.0, 1, 1, 1.0, 1.0);
         RiftDropEntry mvGatedDrop = new RiftDropEntry(
-                "precious", RiftRichness.RICH, GTValues.MV, 1.0, 1, 1, 1.0, 1.0);
+                "precious", RiftQuality.RICH, GTValues.MV, 1.0, 1, 1, 1.0, 1.0);
         List<RiftDropEntry> drops = List.of(ulvDrop, lvDrop, mvGatedDrop);
 
         List<RiftDropEntry> atUlv = RiftEventSpawner.filterEligibleDrops(drops, GTValues.ULV);

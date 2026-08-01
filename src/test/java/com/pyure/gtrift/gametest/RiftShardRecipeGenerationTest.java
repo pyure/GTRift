@@ -23,8 +23,8 @@ import java.util.List;
  * RiftShardRecipeTruncationTest's doc comment for why touching the live recipe-builder pipeline from a
  * test is unsafe; querying RecipeManager.getAllRecipesFor turned out not to reliably reflect GTCEu's
  * own recipes either (returned 0 for a real, freshly-registered set), so the pure expansion function is
- * both the safe AND the reliable way to verify this. Confirms the x1/x2/x4/x8 richness-multiplier
- * chance progression (GTRiftRecipes.RICHNESS_MULTIPLIER) end to end.
+ * both the safe AND the reliable way to verify this. Confirms the x1/x2/x4/x8 quality-multiplier
+ * chance progression (GTRiftRecipes.QUALITY_MULTIPLIER) end to end.
  */
 @PrefixGameTestTemplate(false)
 @GameTestHolder(GTRift.MOD_ID)

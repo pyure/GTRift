@@ -3,7 +3,7 @@ package com.pyure.gtrift.gametest;
 import com.pyure.gtrift.GTRift;
 import com.pyure.gtrift.common.data.RiftDropEntry;
 import com.pyure.gtrift.common.item.GTRiftItems;
-import com.pyure.gtrift.common.item.RiftRichness;
+import com.pyure.gtrift.common.item.RiftQuality;
 import com.pyure.gtrift.common.item.RiftShardItem;
 
 import com.gregtechceu.gtceu.api.GTValues;
@@ -30,7 +30,7 @@ import java.util.List;
  *
  * Only "diamond" (the shipped default shard type) is guaranteed to be a real registered item at test
  * time, so every drop entry here uses that type id — tests that used to distinguish drops by affinity
- * distinguish them by count/richness instead (RiftLootDrops always creates one ItemEntity per drop
+ * distinguish them by count/quality instead (RiftLootDrops always creates one ItemEntity per drop
  * entry, so two entries never merge into one, even with identical item+count+NBT).
  */
 @PrefixGameTestTemplate(false)
@@ -46,7 +46,7 @@ public class RiftLootDropTest {
         tagged.getPersistentData().putBoolean("gtrift_mob", true);
         tagged.getPersistentData().putInt("gtrift_tier", GTValues.LV);
         tagged.getPersistentData().put("gtrift_drops", dropsTag(
-                new RiftDropEntry("diamond", RiftRichness.NORMAL, GTValues.ULV, 1.0, 1, 1, 1.0, 1.0)));
+                new RiftDropEntry("diamond", RiftQuality.NORMAL, GTValues.ULV, 1.0, 1, 1, 1.0, 1.0)));
 
         Zombie untagged = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, UNTAGGED_POS);
 
@@ -77,7 +77,7 @@ public class RiftLootDropTest {
         mob.getPersistentData().putBoolean("gtrift_mob", true);
         mob.getPersistentData().putInt("gtrift_tier", GTValues.LV);
         mob.getPersistentData().put("gtrift_drops", dropsTag(
-                new RiftDropEntry("diamond", RiftRichness.NORMAL, GTValues.ULV, 0.0, 1, 1, 1.0, 1.0)));
+                new RiftDropEntry("diamond", RiftQuality.NORMAL, GTValues.ULV, 0.0, 1, 1, 1.0, 1.0)));
 
         mob.kill();
 
@@ -95,8 +95,8 @@ public class RiftLootDropTest {
         mob.getPersistentData().putInt("gtrift_tier", GTValues.LV);
 
         ListTag drops = dropsTag(
-                new RiftDropEntry("diamond", RiftRichness.NORMAL, GTValues.ULV, 1.0, 1, 1, 1.0, 1.0));
-        drops.add(new RiftDropEntry("diamond", RiftRichness.RICH, GTValues.ULV, 1.0, 2, 2, 1.0, 1.0)
+                new RiftDropEntry("diamond", RiftQuality.NORMAL, GTValues.ULV, 1.0, 1, 1, 1.0, 1.0));
+        drops.add(new RiftDropEntry("diamond", RiftQuality.RICH, GTValues.ULV, 1.0, 2, 2, 1.0, 1.0)
                 .toNbt());
         mob.getPersistentData().put("gtrift_drops", drops);
 
@@ -108,10 +108,10 @@ public class RiftLootDropTest {
                     "expected 2 separate item entities from 2 always-triggering drop entries, got %d"
                             .formatted(results.size()));
             helper.assertTrue(results.stream().anyMatch(i -> i.getItem().getItem() == diamondShardItem()
-                            && i.getItem().getCount() == 1 && RiftShardItem.getRichness(i.getItem()) == RiftRichness.NORMAL),
+                            && i.getItem().getCount() == 1 && RiftShardItem.getQuality(i.getItem()) == RiftQuality.NORMAL),
                     "missing the expected 1x Normal Diamond Rift Shard drop");
             helper.assertTrue(results.stream().anyMatch(i -> i.getItem().getItem() == diamondShardItem()
-                            && i.getItem().getCount() == 2 && RiftShardItem.getRichness(i.getItem()) == RiftRichness.RICH),
+                            && i.getItem().getCount() == 2 && RiftShardItem.getQuality(i.getItem()) == RiftQuality.RICH),
                     "missing the expected 2x Rich Diamond Rift Shard drop");
             helper.succeed();
         });
@@ -125,7 +125,7 @@ public class RiftLootDropTest {
         mob.getPersistentData().putInt("gtrift_tier", GTValues.LV);
         mob.getPersistentData().putBoolean("gtrift_elite", true);
         mob.getPersistentData().put("gtrift_drops", dropsTag(
-                new RiftDropEntry("diamond", RiftRichness.NORMAL, GTValues.ULV, 0.4, 1, 1, 2.5, 3.0)));
+                new RiftDropEntry("diamond", RiftQuality.NORMAL, GTValues.ULV, 0.4, 1, 1, 2.5, 3.0)));
 
         mob.kill();
 

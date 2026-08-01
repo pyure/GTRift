@@ -9,7 +9,7 @@ import net.minecraft.world.item.ItemStack;
 
 public class RiftShardItem extends Item {
 
-    private static final String RICHNESS_TAG = "Richness";
+    private static final String QUALITY_TAG = "Quality";
 
     private final ShardType shardType;
 
@@ -31,27 +31,27 @@ public class RiftShardItem extends Item {
      */
     @Override
     public Component getName(ItemStack stack) {
-        RiftRichness richness = getRichness(stack);
+        RiftQuality quality = getQuality(stack);
         String key = "item.gtrift." + shardType.sanitizedId() + "_shard";
         String fallback = shardType.defaultDisplayName() + " Rift Shard";
-        return Component.translatable(richness.getTranslationKey())
+        return Component.translatable(quality.getTranslationKey())
                 .append(" ")
                 .append(Component.translatableWithFallback(key, fallback));
     }
 
-    public static RiftRichness getRichness(ItemStack stack) {
+    public static RiftQuality getQuality(ItemStack stack) {
         CompoundTag tag = stack.getTag();
-        if (tag == null || !tag.contains(RICHNESS_TAG)) {
-            return RiftRichness.NORMAL;
+        if (tag == null || !tag.contains(QUALITY_TAG)) {
+            return RiftQuality.NORMAL;
         }
         try {
-            return RiftRichness.valueOf(tag.getString(RICHNESS_TAG));
+            return RiftQuality.valueOf(tag.getString(QUALITY_TAG));
         } catch (IllegalArgumentException e) {
-            return RiftRichness.NORMAL;
+            return RiftQuality.NORMAL;
         }
     }
 
-    public static void setRichness(ItemStack stack, RiftRichness richness) {
-        stack.getOrCreateTag().putString(RICHNESS_TAG, richness.name());
+    public static void setQuality(ItemStack stack, RiftQuality quality) {
+        stack.getOrCreateTag().putString(QUALITY_TAG, quality.name());
     }
 }

@@ -2,7 +2,7 @@ package com.pyure.gtrift.gametest;
 
 import com.pyure.gtrift.GTRift;
 import com.pyure.gtrift.common.item.GTRiftItems;
-import com.pyure.gtrift.common.item.RiftRichness;
+import com.pyure.gtrift.common.item.RiftQuality;
 
 import com.gregtechceu.gtceu.api.blockentity.MetaMachineBlockEntity;
 import com.gregtechceu.gtceu.api.capability.recipe.IO;
@@ -30,7 +30,7 @@ import net.minecraftforge.registries.ForgeRegistries;
  *
  * The shipped "diamond" default's outputs (specs/rift-shard-types.md) are
  * [raw_diamond chance=0.05, raw_graphite chance=0.30, raw_coal chance=0.10]. At RICH
- * (x4 multiplier, see GTRiftRecipes.RICHNESS_MULTIPLIER), effective chances are
+ * (x4 multiplier, see GTRiftRecipes.QUALITY_MULTIPLIER), effective chances are
  * [0.2, 1.2, 0.4] — only raw_graphite's floor(1.2)=1 whole unit is a guaranteed (100%, non-RNG)
  * output; the other two outputs and graphite's own 20% fractional unit are real chance rolls, which
  * is why this test only asserts on the guaranteed unit rather than the chance-driven ones (see the
@@ -68,7 +68,7 @@ public class RiftShardCentrifugeRecipeTest {
         NotifiableItemStackHandler itemOut = (NotifiableItemStackHandler) machine
                 .getCapabilitiesFlat(IO.OUT, ItemRecipeCapability.CAP).get(0);
 
-        ItemStack input = GTRiftItems.createStack("diamond", RiftRichness.RICH, 1);
+        ItemStack input = GTRiftItems.createStack("diamond", RiftQuality.RICH, 1);
         itemIn.setStackInSlot(0, input);
         itemIn.onContentsChanged();
 

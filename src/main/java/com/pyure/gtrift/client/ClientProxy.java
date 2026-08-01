@@ -23,7 +23,7 @@ import java.util.Collection;
 
 public class ClientProxy extends CommonProxy {
 
-    private static final ResourceLocation RICHNESS_PROPERTY = new ResourceLocation(GTRift.MOD_ID, "richness");
+    private static final ResourceLocation QUALITY_PROPERTY = new ResourceLocation(GTRift.MOD_ID, "quality");
 
     public ClientProxy(IEventBus modEventBus) {
         super(modEventBus);
@@ -39,8 +39,8 @@ public class ClientProxy extends CommonProxy {
     // key from the model actually resolved for the item itself; resolveParents() only links parent
     // model *references* (for texture/element inheritance), it never merges a parent's own overrides
     // list into a child that doesn't declare one. A bare-redirect version of this compiled and loaded
-    // fine but silently never re-textured by richness — every shard rendered as the flat "normal"
-    // fallback texture from the dispatcher's own "textures" key regardless of actual richness. See
+    // fine but silently never re-textured by quality — every shard rendered as the flat "normal"
+    // fallback texture from the dispatcher's own "textures" key regardless of actual quality. See
     // RiftShardModelPack's own doc comment for why this needs a GTRift-owned PackResources at all
     // (rather than one hand-authored model JSON file per (player-definable, build-time-unknown) shard
     // type).
@@ -78,17 +78,17 @@ public class ClientProxy extends CommonProxy {
         model.add("textures", textures);
 
         JsonArray overrides = new JsonArray();
-        overrides.add(richnessOverride(0.0, "gtrift:item/rift_shard_sparse"));
-        overrides.add(richnessOverride(1.0, "gtrift:item/rift_shard_normal"));
-        overrides.add(richnessOverride(2.0, "gtrift:item/rift_shard_rich"));
-        overrides.add(richnessOverride(3.0, "gtrift:item/rift_shard_extremely_rich"));
+        overrides.add(qualityOverride(0.0, "gtrift:item/rift_shard_sparse"));
+        overrides.add(qualityOverride(1.0, "gtrift:item/rift_shard_normal"));
+        overrides.add(qualityOverride(2.0, "gtrift:item/rift_shard_rich"));
+        overrides.add(qualityOverride(3.0, "gtrift:item/rift_shard_extremely_rich"));
         model.add("overrides", overrides);
         return model;
     }
 
-    private static JsonObject richnessOverride(double richness, String model) {
+    private static JsonObject qualityOverride(double quality, String model) {
         JsonObject predicate = new JsonObject();
-        predicate.addProperty("gtrift:richness", richness);
+        predicate.addProperty("gtrift:quality", quality);
         JsonObject override = new JsonObject();
         override.add("predicate", predicate);
         override.addProperty("model", model);
@@ -105,17 +105,17 @@ public class ClientProxy extends CommonProxy {
                 // with zero rounding error, unlike ordinal/3.0F (which rounds RICH's true 2/3 UP to
                 // 0.6666667f, breaking a naive 0.667 threshold in the item models' "overrides"
                 // arrays — a real bug this replaced). The model thresholds are 0.0/1.0/2.0/3.0,
-                // matching RiftRichness's ordinals 1:1 with no scaling on either side to keep in
+                // matching RiftQuality's ordinals 1:1 with no scaling on either side to keep in
                 // sync — same idiom vanilla uses for e.g. the "custom_model_data" property, which
                 // also returns a raw int cast to float rather than a normalized fraction.
-                ItemProperties.register(item, RICHNESS_PROPERTY,
-                        (stack, level, entity, seed) -> (float) RiftShardItem.getRichness(stack).ordinal());
+                ItemProperties.register(item, QUALITY_PROPERTY,
+                        (stack, level, entity, seed) -> (float) RiftShardItem.getQuality(stack).ordinal());
             }
         });
     }
 
     // Each RiftShardItem instance carries its own fixed ShardType (see GTRiftItems), so the tint is
-    // a direct lookup with no NBT involved — richness (NBT-driven) selects WHICH base texture renders
+    // a direct lookup with no NBT involved — quality (NBT-driven) selects WHICH base texture renders
     // via the model overrides above; the shard type's color (fixed per item, from its JSON) selects
     // its COLOR here.
     private void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {

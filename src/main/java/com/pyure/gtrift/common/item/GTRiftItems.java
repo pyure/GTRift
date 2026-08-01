@@ -35,14 +35,14 @@ public class GTRiftItems {
         return Collections.unmodifiableMap(RIFT_SHARDS);
     }
 
-    public static ItemStack createStack(String shardTypeId, RiftRichness richness, int count) {
+    public static ItemStack createStack(String shardTypeId, RiftQuality quality, int count) {
         ItemEntry<RiftShardItem> entry = RIFT_SHARDS.get(shardTypeId);
         if (entry == null) {
             LOGGER.warn("Unknown shard type id '{}', cannot create a stack for it", shardTypeId);
             return ItemStack.EMPTY;
         }
         ItemStack stack = new ItemStack(entry.get(), count);
-        RiftShardItem.setRichness(stack, richness);
+        RiftShardItem.setQuality(stack, quality);
         return stack;
     }
 }

@@ -1,10 +1,10 @@
 {
   "item.gtrift.diamond_shard": "Diamond Rift Shard",
 
-  "gtrift.richness.sparse": "Sparse",
-  "gtrift.richness.normal": "Normal",
-  "gtrift.richness.rich": "Rich",
-  "gtrift.richness.extremely_rich": "Extremely Rich",
+  "gtrift.quality.sparse": "Sparse",
+  "gtrift.quality.normal": "Normal",
+  "gtrift.quality.rich": "Rich",
+  "gtrift.quality.extremely_rich": "Extremely Rich",
 
   "block.gtrift.rift_beacon": "Rift Beacon",
   "gtceu.machine.rift_beacon.tooltip": "Charges from attached energy hatches, then opens a rift that summons hostile mobs to fight for loot. Casing tier caps the maximum difficulty."

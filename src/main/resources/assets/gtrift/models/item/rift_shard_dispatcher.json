@@ -4,9 +4,9 @@
     "layer0": "gtrift:item/rift_shard_normal"
   },
   "overrides": [
-    { "predicate": { "gtrift:richness": 0.0 }, "model": "gtrift:item/rift_shard_sparse" },
-    { "predicate": { "gtrift:richness": 1.0 }, "model": "gtrift:item/rift_shard_normal" },
-    { "predicate": { "gtrift:richness": 2.0 }, "model": "gtrift:item/rift_shard_rich" },
-    { "predicate": { "gtrift:richness": 3.0 }, "model": "gtrift:item/rift_shard_extremely_rich" }
+    { "predicate": { "gtrift:quality": 0.0 }, "model": "gtrift:item/rift_shard_sparse" },
+    { "predicate": { "gtrift:quality": 1.0 }, "model": "gtrift:item/rift_shard_normal" },
+    { "predicate": { "gtrift:quality": 2.0 }, "model": "gtrift:item/rift_shard_rich" },
+    { "predicate": { "gtrift:quality": 3.0 }, "model": "gtrift:item/rift_shard_extremely_rich" }
   ]
 }

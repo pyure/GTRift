@@ -2,7 +2,7 @@ package com.pyure.gtrift.common.data;
 
 import com.pyure.gtrift.GTRift;
 import com.pyure.gtrift.common.item.GTRiftItems;
-import com.pyure.gtrift.common.item.RiftRichness;
+import com.pyure.gtrift.common.item.RiftQuality;
 
 import com.gregtechceu.gtceu.api.GTValues;
 
@@ -63,7 +63,7 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
      * min/max default to 1 in the shipped defaults below; minTier is a GTValues.VN tier name
      * ("ulv", "lv", "mv", ...), not a raw int, to match the player-facing JSON format.
      */
-    private record DefaultDrop(String type, String richness, double chance, int min, int max, String minTier,
+    private record DefaultDrop(String type, String quality, double chance, int min, int max, String minTier,
                                 double eliteChanceMultiplier, double eliteAmountMultiplier) {}
 
     private record DefaultEntry(String entityId, int weight, List<DefaultDrop> drops) {}
@@ -139,7 +139,7 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
                 for (DefaultDrop drop : defaultEntry.drops()) {
                     JsonObject dropJson = new JsonObject();
                     dropJson.addProperty("type", drop.type());
-                    dropJson.addProperty("richness", drop.richness());
+                    dropJson.addProperty("quality", drop.quality());
                     dropJson.addProperty("chance", drop.chance());
                     dropJson.addProperty("min", drop.min());
                     dropJson.addProperty("max", drop.max());
@@ -245,15 +245,15 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
                     issues.add(message);
                     continue;
                 }
-                RiftRichness richness = RiftRichness
-                        .valueOf(GsonHelper.getAsString(dropObject, "richness").toUpperCase(Locale.ROOT));
+                RiftQuality quality = RiftQuality
+                        .valueOf(GsonHelper.getAsString(dropObject, "quality").toUpperCase(Locale.ROOT));
                 double chance = GsonHelper.getAsDouble(dropObject, "chance");
                 int min = GsonHelper.getAsInt(dropObject, "min", 1);
                 int max = GsonHelper.getAsInt(dropObject, "max", min);
                 int minTier = parseTier(dropObject, "min_tier", source);
                 double eliteChanceMultiplier = GsonHelper.getAsDouble(dropObject, "elite_chance_multiplier", 1.0);
                 double eliteAmountMultiplier = GsonHelper.getAsDouble(dropObject, "elite_amount_multiplier", 1.0);
-                drops.add(new RiftDropEntry(type, richness, minTier, chance, min, max,
+                drops.add(new RiftDropEntry(type, quality, minTier, chance, min, max,
                         eliteChanceMultiplier, eliteAmountMultiplier));
             } catch (Exception e) {
                 String message = "[%s] Failed to parse a drop entry in %s, skipping that entry: %s"

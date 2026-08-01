@@ -2,7 +2,7 @@ package com.pyure.gtrift.gametest;
 
 import com.pyure.gtrift.GTRift;
 import com.pyure.gtrift.common.item.GTRiftItems;
-import com.pyure.gtrift.common.item.RiftRichness;
+import com.pyure.gtrift.common.item.RiftQuality;
 import com.pyure.gtrift.common.item.RiftShardItem;
 
 import net.minecraft.gametest.framework.GameTest;
@@ -31,23 +31,23 @@ public class RiftShardItemTest {
     }
 
     @GameTest(template = "empty")
-    public static void createStackRoundTripsRichness(GameTestHelper helper) {
-        ItemStack stack = GTRiftItems.createStack("diamond", RiftRichness.RICH, 3);
+    public static void createStackRoundTripsQuality(GameTestHelper helper) {
+        ItemStack stack = GTRiftItems.createStack("diamond", RiftQuality.RICH, 3);
         helper.assertTrue(stack.getItem() == GTRiftItems.allShardItems().get("diamond").get(),
                 "createStack returned the wrong item for 'diamond'");
         helper.assertTrue(stack.getCount() == 3, "createStack did not honor the requested count");
-        helper.assertTrue(RiftShardItem.getRichness(stack) == RiftRichness.RICH,
-                "getRichness did not round-trip the richness set by createStack");
+        helper.assertTrue(RiftShardItem.getQuality(stack) == RiftQuality.RICH,
+                "getQuality did not round-trip the quality set by createStack");
 
         ItemStack untagged = new ItemStack(GTRiftItems.allShardItems().get("diamond").get());
-        helper.assertTrue(RiftShardItem.getRichness(untagged) == RiftRichness.NORMAL,
-                "getRichness did not fall back to NORMAL for an untagged stack");
+        helper.assertTrue(RiftShardItem.getQuality(untagged) == RiftQuality.NORMAL,
+                "getQuality did not fall back to NORMAL for an untagged stack");
         helper.succeed();
     }
 
     @GameTest(template = "empty")
     public static void createStackReturnsEmptyStackForUnknownType(GameTestHelper helper) {
-        ItemStack stack = GTRiftItems.createStack("does_not_exist", RiftRichness.NORMAL, 1);
+        ItemStack stack = GTRiftItems.createStack("does_not_exist", RiftQuality.NORMAL, 1);
         helper.assertTrue(stack.isEmpty(),
                 "expected an empty stack (logged, not an NPE/crash) for an unknown shard type id, got %s"
                         .formatted(stack));

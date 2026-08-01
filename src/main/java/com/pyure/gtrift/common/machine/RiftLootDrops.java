@@ -50,7 +50,7 @@ public class RiftLootDrops {
             }
             if (amount <= 0) continue;
 
-            ItemStack stack = GTRiftItems.createStack(drop.type(), drop.richness(), amount);
+            ItemStack stack = GTRiftItems.createStack(drop.type(), drop.quality(), amount);
             if (stack.isEmpty()) continue; // Unknown shard type id — createStack already logged it.
             event.getDrops().add(new ItemEntity(entity.level(), entity.getX(), entity.getY(), entity.getZ(), stack));
         }

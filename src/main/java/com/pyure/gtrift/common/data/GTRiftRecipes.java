@@ -1,7 +1,7 @@
 package com.pyure.gtrift.common.data;
 
 import com.pyure.gtrift.common.item.GTRiftItems;
-import com.pyure.gtrift.common.item.RiftRichness;
+import com.pyure.gtrift.common.item.RiftQuality;
 import com.pyure.gtrift.common.item.RiftShardItem;
 
 import com.gregtechceu.gtceu.api.recipe.chance.logic.ChanceLogic;
@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * Generates one Centrifuge recipe per (ShardType x RiftRichness), reading `outputs` straight from the
+ * Generates one Centrifuge recipe per (ShardType x RiftQuality), reading `outputs` straight from the
  * shard type's own loaded data (see ShardTypeLoader/ShardType) — real GT ore items GTRift has no
  * opinion about, per specs/rift-shard-types.md.
  */
@@ -36,16 +36,16 @@ public class GTRiftRecipes {
     private static final Logger LOGGER = LogManager.getLogger("gtrift");
 
     /**
-     * Unrefined placeholder pending playtesting — doubles per richness tier, matching the old
+     * Unrefined placeholder pending playtesting — doubles per quality tier, matching the old
      * fixed-affinity system's exact ladder, same as this project's existing convention for EUt/duration
      * numbers.
      */
-    private static final Map<RiftRichness, Integer> RICHNESS_MULTIPLIER = new EnumMap<>(RiftRichness.class);
+    private static final Map<RiftQuality, Integer> QUALITY_MULTIPLIER = new EnumMap<>(RiftQuality.class);
     static {
-        RICHNESS_MULTIPLIER.put(RiftRichness.SPARSE, 1);
-        RICHNESS_MULTIPLIER.put(RiftRichness.NORMAL, 2);
-        RICHNESS_MULTIPLIER.put(RiftRichness.RICH, 4);
-        RICHNESS_MULTIPLIER.put(RiftRichness.EXTREMELY_RICH, 8);
+        QUALITY_MULTIPLIER.put(RiftQuality.SPARSE, 1);
+        QUALITY_MULTIPLIER.put(RiftQuality.NORMAL, 2);
+        QUALITY_MULTIPLIER.put(RiftQuality.RICH, 4);
+        QUALITY_MULTIPLIER.put(RiftQuality.EXTREMELY_RICH, 8);
     }
 
     /** GTRecipeTypes.CENTRIFUGE_RECIPES.setMaxIOSize(2, 6, 1, 6) — confirmed against the real 7.5.3 jar. */
@@ -63,16 +63,16 @@ public class GTRiftRecipes {
     public static void init(Consumer<FinishedRecipe> consumer) {
         for (ItemEntry<RiftShardItem> entry : GTRiftItems.allShardItems().values()) {
             ShardType type = entry.get().getShardType();
-            for (RiftRichness richness : RiftRichness.values()) {
-                addCentrifugeRecipe(consumer, type, richness);
+            for (RiftQuality quality : RiftQuality.values()) {
+                addCentrifugeRecipe(consumer, type, quality);
             }
         }
     }
 
     private static void addCentrifugeRecipe(Consumer<FinishedRecipe> consumer, ShardType type,
-                                             RiftRichness richness) {
-        String id = "gtrift:centrifuge/%s_shard_%s".formatted(type.sanitizedId(), richness.name().toLowerCase(Locale.ROOT));
-        int multiplier = RICHNESS_MULTIPLIER.get(richness);
+                                             RiftQuality quality) {
+        String id = "gtrift:centrifuge/%s_shard_%s".formatted(type.sanitizedId(), quality.name().toLowerCase(Locale.ROOT));
+        int multiplier = QUALITY_MULTIPLIER.get(quality);
 
         ExpansionResult expansion = expandOutputs(type.outputs(), multiplier);
         if (!expansion.truncated().isEmpty()) {
@@ -81,8 +81,8 @@ public class GTRiftRecipes {
         }
 
         GTRecipeBuilder builder = GTRecipeTypes.CENTRIFUGE_RECIPES.recipeBuilder(id)
-                .inputItemNbtPredicate(GTRiftItems.createStack(type.sanitizedId(), richness, 1),
-                        NBTPredicates.eq("Richness", richness.name()))
+                .inputItemNbtPredicate(GTRiftItems.createStack(type.sanitizedId(), quality, 1),
+                        NBTPredicates.eq("Quality", quality.name()))
                 .duration(100)
                 .EUt(10);
 

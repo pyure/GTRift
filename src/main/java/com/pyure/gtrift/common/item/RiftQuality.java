@@ -1,12 +1,12 @@
 package com.pyure.gtrift.common.item;
 
-public enum RiftRichness {
+public enum RiftQuality {
     SPARSE,
     NORMAL,
     RICH,
     EXTREMELY_RICH;
 
     public String getTranslationKey() {
-        return "gtrift.richness." + name().toLowerCase();
+        return "gtrift.quality." + name().toLowerCase();
     }
 }

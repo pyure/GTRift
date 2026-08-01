@@ -1,6 +1,6 @@
 package com.pyure.gtrift.common.data;
 
-import com.pyure.gtrift.common.item.RiftRichness;
+import com.pyure.gtrift.common.item.RiftQuality;
 
 import net.minecraft.nbt.CompoundTag;
 
@@ -21,13 +21,13 @@ import net.minecraft.nbt.CompoundTag;
  * pool to draw from, so a mob drawn from RiftMobPool.NORMAL can never be tagged gtrift_elite, and a
  * non-1.0 multiplier on one of its drops would simply never fire.
  */
-public record RiftDropEntry(String type, RiftRichness richness, int minTier, double chance, int min,
+public record RiftDropEntry(String type, RiftQuality quality, int minTier, double chance, int min,
                              int max, double eliteChanceMultiplier, double eliteAmountMultiplier) {
 
     public CompoundTag toNbt() {
         CompoundTag tag = new CompoundTag();
         tag.putString("Type", type);
-        tag.putString("Richness", richness.name());
+        tag.putString("Quality", quality.name());
         tag.putDouble("Chance", chance);
         tag.putInt("Min", min);
         tag.putInt("Max", max);
@@ -40,7 +40,7 @@ public record RiftDropEntry(String type, RiftRichness richness, int minTier, dou
     public static RiftDropEntry fromNbt(CompoundTag tag) {
         return new RiftDropEntry(
                 tag.getString("Type"),
-                RiftRichness.valueOf(tag.getString("Richness")),
+                RiftQuality.valueOf(tag.getString("Quality")),
                 0,
                 tag.getDouble("Chance"),
                 tag.getInt("Min"),
