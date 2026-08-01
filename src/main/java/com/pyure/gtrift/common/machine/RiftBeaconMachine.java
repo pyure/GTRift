@@ -28,6 +28,8 @@ import net.minecraft.world.level.Level;
 
 import org.joml.Vector3f;
 
+import java.util.Locale;
+
 public class RiftBeaconMachine extends MultiblockControllerMachine implements IFancyUIMachine {
 
     // Mob.checkDespawn() only makes a hostile mob despawn-eligible once its noActionTime exceeds
@@ -304,26 +306,61 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
         }
     }
 
-    private String statusText() {
+    /**
+     * "Rift: Idle/Charging/Charged/Open" — a separate row from statusText() so the numeric line below
+     * doesn't need to encode the phase in its own wording (no more "Charging:"/"Rift open:" prefixes).
+     * Plain text, no color: LabelWidget's color is a plain field, never re-synced by
+     * detectAndSendChanges/writeInitialData (confirmed by decompiling LDLib) — only text goes through
+     * the live Supplier/sync path, so a reactive color would need a custom widget (like GTBS's
+     * ScaledLabelWidget, which extends sync to cover what stock LabelWidget doesn't); not worth it for
+     * this feature.
+     */
+    private String riftStatusWord() {
         return switch (state) {
-            // selectedDifficultyTier is -1 until the structure has formed at least once (see its own
-            // field doc) — computeChargeTarget() indexes GTValues.VA by it, so a never-formed
-            // controller's GUI would otherwise throw ArrayIndexOutOfBoundsException the moment it's
-            // opened. IDLE is the only state reachable with a still-unconfigured tier — CHARGING/
-            // CHARGED/RIFT_OPEN are only reachable via tryAccept(), which already requires isFormed().
-            case IDLE -> selectedDifficultyTier >= 0 ? "EU required: " + computeChargeTarget() : "Not formed";
-            case CHARGING -> {
-                long pct = chargeTarget > 0 ? chargeStored * 100 / chargeTarget : 0;
-                // LabelWidget text is routed through I18n.get -> String.format, so a bare "%" (not
-                // part of a valid conversion) throws and renders as "Format error: ..." — escape it.
-                yield "Charging: " + chargeStored + " / " + chargeTarget + " (" + pct + "%%)";
-            }
-            case CHARGED -> "Charged — awaiting rift";
-            case RIFT_OPEN -> {
-                long pct = chargeTarget > 0 ? chargeStored * 100 / chargeTarget : 0;
-                yield "Rift open: " + chargeStored + " / " + chargeTarget + " EU remaining (" + pct + "%%)";
-            }
+            case IDLE -> "Idle";
+            case CHARGING -> "Charging";
+            case CHARGED -> "Charged";
+            case RIFT_OPEN -> "Open";
         };
+    }
+
+    /**
+     * One unified "{stored} / {target} EU (pct%)" line for every state — CHARGING/CHARGED/RIFT_OPEN
+     * use the real chargeTarget field; IDLE uses computeChargeTarget() (the prospective target) since
+     * chargeTarget itself is zeroed whenever state returns to IDLE (see beaconTick()'s RIFT_OPEN ->
+     * IDLE transition), not the live value tryAccept() would actually charge to.
+     */
+    private String statusText() {
+        // selectedDifficultyTier is -1 until the structure has formed at least once (see its own field
+        // doc) — computeChargeTarget() indexes GTValues.VA by it, so a never-formed controller's GUI
+        // would otherwise throw ArrayIndexOutOfBoundsException the moment it's opened. IDLE is the only
+        // state reachable with a still-unconfigured tier — CHARGING/CHARGED/RIFT_OPEN are only
+        // reachable via tryAccept(), which already requires isFormed().
+        if (state == BeaconState.IDLE && selectedDifficultyTier < 0) return "Not formed";
+
+        long target = state == BeaconState.IDLE ? computeChargeTarget() : chargeTarget;
+        long pct = target > 0 ? chargeStored * 100 / target : 0;
+        // LabelWidget text is routed through I18n.get -> String.format, so a bare "%" (not part of a
+        // valid conversion) throws and renders as "Format error: ..." — escape it.
+        return formatEu(chargeStored) + " / " + formatEu(target) + " EU (" + pct + "%%)";
+    }
+
+    /** 999 -> "999", 1400 -> "1.4k", 2_400_000 -> "2.4M", 40_000_000_000 -> "40.0B" — a trailing ".0"
+     * is trimmed (e.g. 2_000_000 -> "2M"). B is needed, not just k/M: max tier at a 60-minute duration
+     * can exceed 40 billion EU. */
+    private static String formatEu(long value) {
+        if (value < 1_000L) return Long.toString(value);
+        if (value < 1_000_000L) return formatWithSuffix(value, 1_000.0, "k");
+        if (value < 1_000_000_000L) return formatWithSuffix(value, 1_000_000.0, "M");
+        return formatWithSuffix(value, 1_000_000_000.0, "B");
+    }
+
+    private static String formatWithSuffix(long value, double divisor, String suffix) {
+        String formatted = String.format(Locale.ROOT, "%.1f", value / divisor);
+        if (formatted.endsWith(".0")) {
+            formatted = formatted.substring(0, formatted.length() - 2);
+        }
+        return formatted + suffix;
     }
 
     /**
@@ -339,36 +376,37 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
         ResourceKey<Level> dimension = serverLevel.dimension();
         boolean noEligibleMobs = RiftMobPool.NORMAL.eligibleEntries(dimension).isEmpty()
                 && RiftMobPool.ELITE.eligibleEntries(dimension).isEmpty();
-        return noEligibleMobs ? "No mobs can spawn in this dimension" : "";
+        return noEligibleMobs ? "No mobs can spawn here" : "";
     }
 
     @Override
     public Widget createUIWidget() {
-        WidgetGroup group = new WidgetGroup(0, 0, 176, 112);
+        WidgetGroup group = new WidgetGroup(0, 0, 176, 124);
         // Background — must be the first child so it renders behind the labels, otherwise the
         // panel is just bare text with nothing to signal a GUI is even open (found this the hard way).
-        group.addWidget(new ImageWidget(0, 0, 176, 112, new ColorRectTexture(0xFF1A1A1A)));
+        group.addWidget(new ImageWidget(0, 0, 176, 124, new ColorRectTexture(0xFF1A1A1A)));
         group.addWidget(new LabelWidget(10, 8, () -> isFormed() ? "Formed: yes" : "Formed: no"));
         group.addWidget(new LabelWidget(10, 20, () -> isFormed() ? "Tier: " + GTValues.VN[tier] : ""));
+        group.addWidget(new LabelWidget(10, 32, () -> "Rift: " + riftStatusWord()));
 
-        group.addWidget(new ButtonWidget(10, 34, 12, 12, cd -> adjustDifficulty(-1)));
-        group.addWidget(new LabelWidget(14, 36, "-"));
-        group.addWidget(new LabelWidget(28, 36,
+        group.addWidget(new ButtonWidget(10, 46, 12, 12, cd -> adjustDifficulty(-1)));
+        group.addWidget(new LabelWidget(14, 48, "-"));
+        group.addWidget(new LabelWidget(28, 48,
                 () -> "Difficulty: " + (selectedDifficultyTier >= 0 ? GTValues.VN[selectedDifficultyTier] : "-")));
-        group.addWidget(new ButtonWidget(150, 34, 12, 12, cd -> adjustDifficulty(1)));
-        group.addWidget(new LabelWidget(154, 36, "+"));
+        group.addWidget(new ButtonWidget(150, 46, 12, 12, cd -> adjustDifficulty(1)));
+        group.addWidget(new LabelWidget(154, 48, "+"));
 
-        group.addWidget(new ButtonWidget(10, 49, 12, 12, cd -> adjustDuration(-1)));
-        group.addWidget(new LabelWidget(14, 51, "-"));
-        group.addWidget(new LabelWidget(28, 51, () -> "Duration: " + selectedDurationMinutes + " min"));
-        group.addWidget(new ButtonWidget(150, 49, 12, 12, cd -> adjustDuration(1)));
-        group.addWidget(new LabelWidget(154, 51, "+"));
+        group.addWidget(new ButtonWidget(10, 61, 12, 12, cd -> adjustDuration(-1)));
+        group.addWidget(new LabelWidget(14, 63, "-"));
+        group.addWidget(new LabelWidget(28, 63, () -> "Duration: " + selectedDurationMinutes + " min"));
+        group.addWidget(new ButtonWidget(150, 61, 12, 12, cd -> adjustDuration(1)));
+        group.addWidget(new LabelWidget(154, 63, "+"));
 
-        group.addWidget(new LabelWidget(10, 66, this::statusText));
-        group.addWidget(new LabelWidget(10, 78, this::dimensionWarningText));
+        group.addWidget(new LabelWidget(10, 78, this::statusText));
+        group.addWidget(new LabelWidget(10, 90, this::dimensionWarningText));
 
-        group.addWidget(new ButtonWidget(10, 92, 60, 16, cd -> tryAccept()));
-        group.addWidget(new LabelWidget(20, 96, "Accept"));
+        group.addWidget(new ButtonWidget(10, 104, 60, 16, cd -> tryAccept()));
+        group.addWidget(new LabelWidget(20, 108, "Accept"));
 
         return group;
     }

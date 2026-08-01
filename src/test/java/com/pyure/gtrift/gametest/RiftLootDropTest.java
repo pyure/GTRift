@@ -1,6 +1,7 @@
 package com.pyure.gtrift.gametest;
 
 import com.pyure.gtrift.GTRift;
+import com.pyure.gtrift.common.config.GTRiftConfig;
 import com.pyure.gtrift.common.data.RiftDropEntry;
 import com.pyure.gtrift.common.item.GTRiftItems;
 import com.pyure.gtrift.common.item.RiftQuality;
@@ -16,9 +17,12 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.phys.AABB;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -139,6 +143,39 @@ public class RiftLootDropTest {
                             .formatted(results.get(0).getItem().getCount()));
             helper.succeed();
         });
+    }
+
+    /**
+     * Constructs and posts a LivingDropsEvent directly (its lootingLevel is a plain constructor arg)
+     * rather than killing the mob with a real Looting-enchanted weapon — gives an exact, deterministic
+     * looting level with no need for a real player/enchanted item setup, and the event fires
+     * synchronously so the resulting drops are inspectable immediately, no runAfterDelay/nearbyItems
+     * scan needed. Computes the expected amount from the live config value rather than hardcoding the
+     * default percentage, so this doesn't silently drift if lootingAmountBonusPercent's default changes.
+     */
+    @GameTest(template = "empty")
+    public static void lootingLevelScalesAmountButNotChance(GameTestHelper helper) {
+        Zombie mob = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, TAGGED_POS);
+        mob.getPersistentData().putBoolean("gtrift_mob", true);
+        mob.getPersistentData().putInt("gtrift_tier", GTValues.LV);
+        mob.getPersistentData().put("gtrift_drops", dropsTag(
+                new RiftDropEntry("diamond", RiftQuality.NORMAL, GTValues.ULV, 1.0, 2, 2, 1.0, 1.0)));
+
+        int lootingLevel = 4;
+        LivingDropsEvent event = new LivingDropsEvent(mob, mob.damageSources().generic(), new ArrayList<>(),
+                lootingLevel, true);
+        MinecraftForge.EVENT_BUS.post(event);
+
+        double expectedMultiplier = 1.0 + lootingLevel * (GTRiftConfig.INSTANCE.lootingAmountBonusPercent / 100.0);
+        int expectedAmount = (int) Math.round(2 * expectedMultiplier);
+
+        List<ItemEntity> drops = List.copyOf(event.getDrops());
+        helper.assertTrue(drops.size() == 1, "expected exactly 1 drop entity, got %d".formatted(drops.size()));
+        helper.assertTrue(drops.get(0).getItem().getCount() == expectedAmount,
+                "expected looting level %d to scale base amount 2 to %d, got %d"
+                        .formatted(lootingLevel, expectedAmount, drops.get(0).getItem().getCount()));
+
+        helper.succeed();
     }
 
     private static ListTag dropsTag(RiftDropEntry entry) {

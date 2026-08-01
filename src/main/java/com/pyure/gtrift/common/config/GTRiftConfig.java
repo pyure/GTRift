@@ -46,6 +46,11 @@ public class GTRiftConfig {
     @Configurable.Range(min = 1, max = 360)
     public int riftSlantArcDegrees = 90;
 
+    @Configurable
+    @Configurable.Comment("Percent bonus to a rift drop's rolled amount per level of Looting on the killing blow. Applies uniformly to every drop entry; stacks multiplicatively with a drop's own eliteAmountMultiplier on elite kills.")
+    @Configurable.Range(min = 0, max = 200)
+    public int lootingAmountBonusPercent = 25;
+
     public static void init() {
         synchronized (LOCK) {
             if (INSTANCE == null) {

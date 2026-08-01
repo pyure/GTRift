@@ -1,6 +1,7 @@
 package com.pyure.gtrift.common.machine;
 
 import com.pyure.gtrift.GTRift;
+import com.pyure.gtrift.common.config.GTRiftConfig;
 import com.pyure.gtrift.common.data.RiftDropEntry;
 import com.pyure.gtrift.common.item.GTRiftItems;
 
@@ -21,6 +22,11 @@ import net.minecraftforge.fml.common.Mod;
  * minTier the spawn's difficulty tier satisfies). Each entry rolls its own chance independently, so a
  * single kill can yield multiple shards, one, or — intentionally — none. Mobs without the gtrift_mob
  * tag, including ordinary wild-spawned mobs of the same type, are untouched entirely.
+ *
+ * Looting only affects rolled amount, never chance — a drop entry's own chance is exactly what's
+ * configured, Looting or not. GTRiftConfig.lootingAmountBonusPercent applies uniformly to every drop
+ * entry and stacks multiplicatively with a drop's own eliteAmountMultiplier on elite kills (one
+ * combined multiplier, rounded once, rather than rounding each factor separately).
  */
 @Mod.EventBusSubscriber(modid = GTRift.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RiftLootDrops {
@@ -34,6 +40,8 @@ public class RiftLootDrops {
 
         boolean isElite = entity.getPersistentData().getBoolean("gtrift_elite");
         RandomSource random = entity.level().getRandom();
+        double lootingMultiplier =
+                1.0 + event.getLootingLevel() * (GTRiftConfig.INSTANCE.lootingAmountBonusPercent / 100.0);
 
         ListTag dropsTag = entity.getPersistentData().getList("gtrift_drops", Tag.TAG_COMPOUND);
         for (int i = 0; i < dropsTag.size(); i++) {
@@ -42,12 +50,11 @@ public class RiftLootDrops {
             double chance = isElite ? drop.chance() * drop.eliteChanceMultiplier() : drop.chance();
             if (random.nextDouble() >= Math.min(1.0, chance)) continue;
 
-            int amount = drop.min() >= drop.max()
+            int baseAmount = drop.min() >= drop.max()
                     ? drop.min()
                     : drop.min() + random.nextInt(drop.max() - drop.min() + 1);
-            if (isElite) {
-                amount = (int) Math.round(amount * drop.eliteAmountMultiplier());
-            }
+            double amountMultiplier = isElite ? lootingMultiplier * drop.eliteAmountMultiplier() : lootingMultiplier;
+            int amount = (int) Math.round(baseAmount * amountMultiplier);
             if (amount <= 0) continue;
 
             ItemStack stack = GTRiftItems.createStack(drop.type(), drop.quality(), amount);
