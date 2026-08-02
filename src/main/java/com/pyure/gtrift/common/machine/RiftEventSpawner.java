@@ -61,7 +61,7 @@ public class RiftEventSpawner {
         Entity spawned = entry.entityType().spawn(level, spawnPos, MobSpawnType.EVENT);
         if (!(spawned instanceof Mob mob)) return null;
 
-        applyDifficultyScaling(mob, difficultyTier);
+        applyDifficultyScaling(mob, difficultyTier, entry);
         applyDaylightImmunity(mob, random);
         applyAggro(level, mob);
 
@@ -166,21 +166,33 @@ public class RiftEventSpawner {
     private static final double DAMAGE_BONUS_PER_TIER = 2.0;
     private static final double SPEED_BONUS_PER_TIER = 0.1;
 
-    private static void applyDifficultyScaling(Mob mob, int difficultyTier) {
+    // entry's healthMultiplier/damageMultiplier/speedMultiplier (default 1.0, a no-op) scale the
+    // FINAL tier-adjusted value — (vanillaBase + perTierBonus) * multiplier — not the vanilla base
+    // before the tier bonus. No elite-specific variant: "elite" already means "drawn from the separate
+    // rift_elite_mobs pool," so a pack dev wanting beefier elites sets a higher multiplier directly in
+    // that pool's own file.
+    //
+    // Public (not private) so RiftDifficultyScalingTest can exercise it directly against a real spawned
+    // mob without needing the full trySpawnMob pipeline (which would mean touching the global
+    // RiftMobPool singletons — see RiftEventSpawnerDropTest's own doc comment for why that's avoided).
+    public static void applyDifficultyScaling(Mob mob, int difficultyTier, RiftMobPoolEntry entry) {
         AttributeInstance health = mob.getAttribute(Attributes.MAX_HEALTH);
         if (health != null) {
-            health.setBaseValue(health.getBaseValue() + HEALTH_BONUS_PER_TIER * difficultyTier);
+            double tierAdjusted = health.getBaseValue() + HEALTH_BONUS_PER_TIER * difficultyTier;
+            health.setBaseValue(tierAdjusted * entry.healthMultiplier());
             mob.setHealth(mob.getMaxHealth());
         }
 
         AttributeInstance speed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
         if (speed != null) {
-            speed.setBaseValue(speed.getBaseValue() + SPEED_BONUS_PER_TIER * difficultyTier);
+            double tierAdjusted = speed.getBaseValue() + SPEED_BONUS_PER_TIER * difficultyTier;
+            speed.setBaseValue(tierAdjusted * entry.speedMultiplier());
         }
 
         AttributeInstance damage = mob.getAttribute(Attributes.ATTACK_DAMAGE);
         if (damage != null) {
-            damage.setBaseValue(damage.getBaseValue() + DAMAGE_BONUS_PER_TIER * difficultyTier);
+            double tierAdjusted = damage.getBaseValue() + DAMAGE_BONUS_PER_TIER * difficultyTier;
+            damage.setBaseValue(tierAdjusted * entry.damageMultiplier());
         }
     }
 

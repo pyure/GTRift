@@ -72,7 +72,8 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
     private record DefaultDrop(String type, String quality, double chance, int min, int max, String minTier,
                                 double eliteChanceMultiplier, double eliteAmountMultiplier) {}
 
-    private record DefaultEntry(String entityId, int weight, List<DefaultDrop> drops) {}
+    private record DefaultEntry(String entityId, int weight, double healthMultiplier, double damageMultiplier,
+                                 double speedMultiplier, List<DefaultDrop> drops) {}
 
     /**
      * `fatal` means "skip the whole entry" (mirrors the unknown-entity treatment in parseEntry) — an
@@ -96,18 +97,25 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
      * glowing/named/boss-barred"), so extractDefaultsIfMissing writes these multiplier values only for
      * rift_elite_mobs and forces 1.0 (an honest no-op) for rift_mobs, rather than shipping a nonzero
      * value that implies a behavior that can't happen there.
+     *
+     * healthMultiplier/damageMultiplier/speedMultiplier are unrelated to the elite system above — they
+     * apply to every entry in both pools, on top of the flat per-tier stat bonus (see
+     * RiftEventSpawner.applyDifficultyScaling). Zombie's 1.2 health here is purely illustrative, so a
+     * pack dev opening a freshly-extracted config sees the field in use, not just documented —
+     * extractDefaultsIfMissing only writes a multiplier key when it's not the 1.0 no-op, so the other
+     * three entries' JSON stays uncluttered.
      */
     private static final List<DefaultEntry> DEFAULT_ENTRIES = List.of(
-            new DefaultEntry("minecraft:zombie", 100, List.of(
+            new DefaultEntry("minecraft:zombie", 100, 1.2, 1.0, 1.0, List.of(
                     new DefaultDrop("diamond", "normal", 0.9, 1, 1, "ulv", 1.2, 2.0),
                     new DefaultDrop("diamond", "rich", 0.1, 1, 1, "ulv", 3.0, 2.0))),
-            new DefaultEntry("minecraft:skeleton", 100, List.of(
+            new DefaultEntry("minecraft:skeleton", 100, 1.0, 1.0, 1.0, List.of(
                     new DefaultDrop("diamond", "normal", 0.9, 1, 1, "ulv", 1.2, 2.0),
                     new DefaultDrop("diamond", "rich", 0.1, 1, 1, "ulv", 3.0, 2.0))),
-            new DefaultEntry("minecraft:spider", 100, List.of(
+            new DefaultEntry("minecraft:spider", 100, 1.0, 1.0, 1.0, List.of(
                     new DefaultDrop("diamond", "normal", 0.9, 1, 1, "ulv", 1.2, 2.0),
                     new DefaultDrop("diamond", "rich", 0.08, 1, 1, "lv", 3.0, 2.0))),
-            new DefaultEntry("minecraft:husk", 100, List.of(
+            new DefaultEntry("minecraft:husk", 100, 1.0, 1.0, 1.0, List.of(
                     new DefaultDrop("diamond", "normal", 0.9, 1, 1, "ulv", 1.2, 2.0),
                     new DefaultDrop("diamond", "extremely_rich", 0.05, 1, 1, "mv", 3.0, 2.0))));
 
@@ -160,6 +168,18 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
                 JsonObject json = new JsonObject();
                 json.addProperty("entity", defaultEntry.entityId());
                 json.addProperty("weight", defaultEntry.weight());
+                // Only written when not the 1.0 no-op, same "don't ship a field that changes nothing"
+                // reasoning as the elite multipliers below, just on a different condition (every entry
+                // in both pools can use these, so it's per-value here, not per-pool).
+                if (defaultEntry.healthMultiplier() != 1.0) {
+                    json.addProperty("health_multiplier", defaultEntry.healthMultiplier());
+                }
+                if (defaultEntry.damageMultiplier() != 1.0) {
+                    json.addProperty("damage_multiplier", defaultEntry.damageMultiplier());
+                }
+                if (defaultEntry.speedMultiplier() != 1.0) {
+                    json.addProperty("speed_multiplier", defaultEntry.speedMultiplier());
+                }
 
                 JsonArray dropsArray = new JsonArray();
                 for (DefaultDrop drop : defaultEntry.drops()) {
@@ -254,8 +274,13 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
                 return Optional.empty();
             }
 
+            double healthMultiplier = GsonHelper.getAsDouble(object, "health_multiplier", 1.0);
+            double damageMultiplier = GsonHelper.getAsDouble(object, "damage_multiplier", 1.0);
+            double speedMultiplier = GsonHelper.getAsDouble(object, "speed_multiplier", 1.0);
+
             List<RiftDropEntry> drops = parseDrops(object, source);
-            return Optional.of(new RiftMobPoolEntry(entityType, weight, drops, dimensionResult.dimensions()));
+            return Optional.of(new RiftMobPoolEntry(entityType, weight, drops, dimensionResult.dimensions(),
+                    healthMultiplier, damageMultiplier, speedMultiplier));
         } catch (Exception e) {
             String message = "[%s] Failed to parse %s, skipping: %s".formatted(directory, source, e.getMessage());
             LOGGER.warn(message);

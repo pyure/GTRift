@@ -36,13 +36,13 @@ public class RiftMobPoolEligibilityTest {
             ResourceKey.create(Registries.DIMENSION, new ResourceLocation("minecraft:the_nether"));
 
     private static final RiftMobPoolEntry OVERWORLD_ONLY = new RiftMobPoolEntry(
-            EntityType.ZOMBIE, 100, List.of(), Optional.of(Set.of(OVERWORLD)));
+            EntityType.ZOMBIE, 100, List.of(), Optional.of(Set.of(OVERWORLD)), 1.0, 1.0, 1.0);
     private static final RiftMobPoolEntry NETHER_ONLY = new RiftMobPoolEntry(
-            EntityType.SKELETON, 100, List.of(), Optional.of(Set.of(NETHER)));
+            EntityType.SKELETON, 100, List.of(), Optional.of(Set.of(NETHER)), 1.0, 1.0, 1.0);
     private static final RiftMobPoolEntry EVERYWHERE = new RiftMobPoolEntry(
-            EntityType.SPIDER, 100, List.of(), Optional.empty());
+            EntityType.SPIDER, 100, List.of(), Optional.empty(), 1.0, 1.0, 1.0);
     private static final RiftMobPoolEntry NEVER = new RiftMobPoolEntry(
-            EntityType.HUSK, 100, List.of(), Optional.of(Set.of()));
+            EntityType.HUSK, 100, List.of(), Optional.of(Set.of()), 1.0, 1.0, 1.0);
 
     @GameTest(template = "empty")
     public static void eligibleEntriesFiltersToMatchingDimension(GameTestHelper helper) {

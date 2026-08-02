@@ -106,7 +106,8 @@ public class RiftMobPoolDimensionTest {
 
     private static void assertEligible(GameTestHelper helper, DimensionParseResult result,
                                         ResourceKey<Level> dimension, boolean expected) {
-        RiftMobPoolEntry entry = new RiftMobPoolEntry(EntityType.ZOMBIE, 1, List.of(), result.dimensions());
+        RiftMobPoolEntry entry = new RiftMobPoolEntry(EntityType.ZOMBIE, 1, List.of(), result.dimensions(),
+                1.0, 1.0, 1.0);
         helper.assertTrue(entry.isEligibleFor(dimension) == expected,
                 "expected isEligibleFor(%s) == %b for %s".formatted(dimension.location(), expected, result.dimensions()));
     }
