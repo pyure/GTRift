@@ -147,6 +147,15 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
                     riftVisualPos = getPos();
                 }
             }
+
+            // Same reload-recovery reasoning as riftVisualPos above: RiftAmbienceTracker.register()
+            // only ever runs from tryAccept()'s IDLE -> CHARGING transition, so a server restart (or
+            // any other reload) mid-charge/mid-rift would otherwise silently orphan this beacon from
+            // the tracker until its next full charge cycle. ensureTracked() is a no-op if the tracker
+            // is already tracking this position (e.g. an ordinary chunk unload/reload while active).
+            if (state == BeaconState.CHARGING || state == BeaconState.RIFT_OPEN) {
+                RiftAmbienceTracker.ensureTracked(getLevel().dimension(), getPos(), state);
+            }
         }
     }
 
@@ -191,6 +200,7 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
         chargeTarget = computeChargeTarget();
         chargeStored = 0;
         state = BeaconState.CHARGING;
+        RiftAmbienceTracker.register(getLevel().dimension(), getPos());
     }
 
     private void beaconTick() {

@@ -51,6 +51,15 @@ public class GTRiftConfig {
     @Configurable.Range(min = 0, max = 200)
     public int lootingAmountBonusPercent = 25;
 
+    @Configurable
+    @Configurable.Comment("How far away players can see/hear ambience effects (sky tint, clouds, thunder) from an active rift. Intended to stay >= spawnRadius; the ambience system itself clamps to at least spawnRadius even if this is misconfigured smaller.")
+    @Configurable.Range(min = 1, max = 2000)
+    public int backdropRadius = 200;
+
+    @Configurable
+    @Configurable.Comment("Whether the rift ambience track plays (and suppresses vanilla music) during an active rift. When false, vanilla music is left completely untouched.")
+    public boolean enableRiftMusic = true;
+
     public static void init() {
         synchronized (LOCK) {
             if (INSTANCE == null) {

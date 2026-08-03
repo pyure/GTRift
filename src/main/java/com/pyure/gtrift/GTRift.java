@@ -5,6 +5,8 @@ import com.pyure.gtrift.common.CommonProxy;
 import com.pyure.gtrift.common.config.GTRiftConfig;
 import com.pyure.gtrift.common.data.RiftMobPoolLoader;
 import com.pyure.gtrift.common.data.ShardTypeLoader;
+import com.pyure.gtrift.common.network.GTRiftNetworking;
+import com.pyure.gtrift.common.sound.GTRiftSounds;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
@@ -25,6 +27,7 @@ public class GTRift {
     @SuppressWarnings("removal")
     public GTRift() {
         GTRiftConfig.init();
+        GTRiftNetworking.register();
         RiftMobPoolLoader.extractDefaultsIfMissing("rift_mobs");
         RiftMobPoolLoader.extractDefaultsIfMissing("rift_elite_mobs");
         ShardTypeLoader.extractDefaultsIfMissing();
@@ -33,6 +36,7 @@ public class GTRift {
                 SHARD_TYPE_LOAD_RESULT.shardTypes().size(), SHARD_TYPE_LOAD_RESULT.issues().size());
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         REGISTRATE = GTRiftRegistrate.create(MOD_ID, modEventBus);
+        GTRiftSounds.register(modEventBus);
         DistExecutor.unsafeRunForDist(
                 () -> () -> new ClientProxy(modEventBus),
                 () -> () -> new CommonProxy(modEventBus));
