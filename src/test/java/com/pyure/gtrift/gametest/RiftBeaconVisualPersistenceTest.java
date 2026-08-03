@@ -30,11 +30,11 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(GTRift.MOD_ID)
 public class RiftBeaconVisualPersistenceTest {
 
-    @GameTest(template = "rift_beacon_lv", timeoutTicks = 200)
+    @GameTest(template = "rift_beacon", timeoutTicks = 200)
     public static void riftVisualPosSurvivesSaveLoadRoundTrip(GameTestHelper helper) {
-        BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 2, 0));
+        BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 1, 0));
         if (!(holder instanceof MetaMachineBlockEntity metaMachineBlockEntity)) {
-            helper.fail("wrong block at relative pos [1,2,0]!");
+            helper.fail("wrong block at relative pos [1,1,0]!");
             return;
         }
         MetaMachine machine = metaMachineBlockEntity.getMetaMachine();

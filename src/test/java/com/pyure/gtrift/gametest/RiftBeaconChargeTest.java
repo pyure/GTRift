@@ -18,7 +18,7 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
 /**
  * Requires the same structure template as RiftBeaconStructureTest
- * (src/test/resources/data/gtrift/structures/rift_beacon_lv.nbt). Does NOT depend on the captured
+ * (src/test/resources/data/gtrift/structures/rift_beacon.nbt). Does NOT depend on the captured
  * hatch already holding charge — the captured snapshot's energyStored is whatever it happened to
  * be at save time (confirmed to be 0 in practice), which would make charging tests depend on
  * re-capturing the structure at exactly the right moment. Instead, chargeEnergyHatch() sets the
@@ -57,11 +57,11 @@ public class RiftBeaconChargeTest {
 
     private static RiftBeaconMachine getBeacon(GameTestHelper helper) {
         // Structure blocks place content starting one block above their own Y position, and the
-        // rift_beacon_lv.nbt capture has the controller at local [1,1,0] (not the structure's own
-        // corner) — so (0,1,0) resolves to the energy hatch's position, not the controller's.
-        BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 2, 0));
+        // rift_beacon.nbt capture has the controller at local [1,0,0] (not the structure's own
+        // corner) — so relative (1,1,0) resolves to the controller's position.
+        BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 1, 0));
         if (!(holder instanceof MetaMachineBlockEntity metaMachineBlockEntity)) {
-            helper.fail("wrong block at relative pos [0,1,0]!");
+            helper.fail("wrong block at relative pos [1,1,0]!");
             return null;
         }
         MetaMachine machine = metaMachineBlockEntity.getMetaMachine();
@@ -83,7 +83,7 @@ public class RiftBeaconChargeTest {
         return false;
     }
 
-    @GameTest(template = "rift_beacon_lv", timeoutTicks = 400)
+    @GameTest(template = "rift_beacon", timeoutTicks = 400)
     public static void chargingReachesTargetWithoutOvershooting(GameTestHelper helper) {
         RiftBeaconMachine beacon = getBeacon(helper);
         if (beacon == null) return;

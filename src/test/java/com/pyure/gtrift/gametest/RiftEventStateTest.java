@@ -18,7 +18,7 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
 /**
  * Requires the same structure template as RiftBeaconChargeTest
- * (src/test/resources/data/gtrift/structures/rift_beacon_lv.nbt).
+ * (src/test/resources/data/gtrift/structures/rift_beacon.nbt).
  *
  * Exercises the full Phase 5 CHARGING -> RIFT_OPEN -> IDLE lifecycle: reaches a small chargeTarget
  * for speed, confirms the instant pass-through to RIFT_OPEN (never lingers at CHARGED), then
@@ -52,11 +52,11 @@ public class RiftEventStateTest {
 
     private static RiftBeaconMachine getBeacon(GameTestHelper helper) {
         // Structure blocks place content starting one block above their own Y position, and the
-        // rift_beacon_lv.nbt capture has the controller at local [1,1,0] (not the structure's own
-        // corner) — so (0,1,0) resolves to the energy hatch's position, not the controller's.
-        BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 2, 0));
+        // rift_beacon.nbt capture has the controller at local [1,0,0] (not the structure's own
+        // corner) — so relative (1,1,0) resolves to the controller's position.
+        BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 1, 0));
         if (!(holder instanceof MetaMachineBlockEntity metaMachineBlockEntity)) {
-            helper.fail("wrong block at relative pos [0,1,0]!");
+            helper.fail("wrong block at relative pos [1,1,0]!");
             return null;
         }
         MetaMachine machine = metaMachineBlockEntity.getMetaMachine();
@@ -78,7 +78,7 @@ public class RiftEventStateTest {
         return false;
     }
 
-    @GameTest(template = "rift_beacon_lv", timeoutTicks = 400)
+    @GameTest(template = "rift_beacon", timeoutTicks = 400)
     public static void riftOpensThenClosesCleanly(GameTestHelper helper) {
         RiftBeaconMachine beacon = getBeacon(helper);
         if (beacon == null) return;

@@ -15,23 +15,24 @@ import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Requires a structure template at src/test/resources/data/gtrift/structures/rift_beacon_lv.nbt —
- * a fully formed Rift Beacon built with LV machine casings, with the controller at relative
- * position (0,1,0) — build it via the in-game structure-block workflow documented in
+ * Requires a structure template at src/test/resources/data/gtrift/structures/rift_beacon.nbt — a
+ * fully formed Rift Beacon (fixed ULV-casing wall, HV-casing tier ring — see
+ * plans/beacon-structure-redesign.md for the full shape), with the controller at relative
+ * position (1,1,0) — build it via the in-game structure-block workflow documented in
  * src/test/README.md before running this test.
  */
 @PrefixGameTestTemplate(false)
 @GameTestHolder(GTRift.MOD_ID)
 public class RiftBeaconStructureTest {
 
-    @GameTest(template = "rift_beacon_lv", timeoutTicks = 200)
-    public static void beaconFormsAtLVTier(GameTestHelper helper) {
+    @GameTest(template = "rift_beacon", timeoutTicks = 200)
+    public static void beaconFormsAtTierDetectedFromRing(GameTestHelper helper) {
         // Structure blocks place content starting one block above their own Y position, and the
-        // rift_beacon_lv.nbt capture has the controller at local [1,1,0] (not the structure's own
-        // corner) — so (0,1,0) resolves to the energy hatch's position, not the controller's.
-        BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 2, 0));
+        // rift_beacon.nbt capture has the controller at local [1,0,0] (not the structure's own
+        // corner) — so relative (1,1,0) resolves to the controller's position.
+        BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 1, 0));
         if (!(holder instanceof MetaMachineBlockEntity metaMachineBlockEntity)) {
-            helper.fail("wrong block at relative pos [0,1,0]!");
+            helper.fail("wrong block at relative pos [1,1,0]!");
             return;
         }
         MetaMachine machine = metaMachineBlockEntity.getMetaMachine();
@@ -45,8 +46,10 @@ public class RiftBeaconStructureTest {
         // reliably at 8 concurrently-running tests but flaked at 12).
         helper.startSequence()
                 .thenWaitUntil(() -> helper.assertTrue(beacon.isFormed(), "Rift Beacon did not form"))
-                .thenExecute(() -> helper.assertTrue(beacon.tier == GTValues.LV,
-                        "expected tier LV (%d), got %d".formatted(GTValues.LV, beacon.tier)))
+                // Tier ring in rift_beacon.nbt is built from HV casings — the wall itself is always
+                // ULV and no longer informs tier at all (see RiftBeaconTierPredicate).
+                .thenExecute(() -> helper.assertTrue(beacon.tier == GTValues.HV,
+                        "expected tier HV (%d), got %d".formatted(GTValues.HV, beacon.tier)))
                 .thenSucceed();
     }
 }

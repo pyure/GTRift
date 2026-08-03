@@ -45,7 +45,7 @@ For a test that needs a **real formed machine/multiblock** (like `RiftShardCentr
 own structure template — the gtceu *slim* jar ships no test resources at all (not even GTCEu's own `singleblock_*`
 templates used in its internal tests), so there's nothing to inherit. Build one via the vanilla structure-block
 workflow: place a Structure Block (`/give @s minecraft:structure_block`), set it to Save mode, type an
-explicitly-namespaced name (e.g. `gtrift:rift_beacon_lv`) into the Structure Name field, size/position the
+explicitly-namespaced name (e.g. `gtrift:rift_beacon`) into the Structure Name field, size/position the
 bounding box to fully cover the built structure (Detect doesn't reliably work for GTCEu multiblocks — size it
 manually against the machine's actual pattern, e.g. `GTRiftBlocks.java`'s `.aisle(...)` calls), and Save. That
 writes to `run/saves/<world>/generated/<namespace>/structures/<name>.nbt` (namespace/name matching whatever you
