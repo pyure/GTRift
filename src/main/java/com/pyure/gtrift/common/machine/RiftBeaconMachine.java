@@ -207,6 +207,24 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
         this.state = BeaconState.IDLE;
         this.chargeStored = 0;
         this.chargeTarget = 0;
+        syncRenderState();
+    }
+
+    /**
+     * Mirrors {@code state} onto the controller's {@code MachineRenderState} so the front-face overlay
+     * texture (see assets/gtrift/models/block/machine/rift_beacon.json) tracks the beacon's lifecycle —
+     * same idiom GTCEu itself uses for e.g. the charger machine's own custom render-state property.
+     */
+    private void syncRenderState() {
+        RiftBeaconRenderState desired = switch (state) {
+            case IDLE, CHARGED -> RiftBeaconRenderState.INACTIVE;
+            case CHARGING -> RiftBeaconRenderState.CHARGING;
+            case RIFT_OPEN -> RiftBeaconRenderState.RIFT_OPEN;
+        };
+        if (getRenderState().hasProperty(RiftBeaconRenderState.PROPERTY) &&
+                getRenderState().getValue(RiftBeaconRenderState.PROPERTY) != desired) {
+            setRenderState(getRenderState().setValue(RiftBeaconRenderState.PROPERTY, desired));
+        }
     }
 
     private void adjustDifficulty(int delta) {
@@ -228,6 +246,7 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
         chargeTarget = computeChargeTarget();
         chargeStored = 0;
         state = BeaconState.CHARGING;
+        syncRenderState();
         RiftAmbienceTracker.register(getLevel().dimension(), getPos());
     }
 
@@ -250,6 +269,7 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
                 // (RIFT_OPEN) is ever observably synced to the client.
                 state = BeaconState.CHARGED;
                 state = BeaconState.RIFT_OPEN;
+                syncRenderState();
                 spawnTimerTicks = 0;
                 pendingSpawnPos = null;
                 pendingSpawnTicksElapsed = 0;
@@ -339,6 +359,7 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
                 chargeStored = 0;
                 chargeTarget = 0;
                 state = BeaconState.IDLE;
+                syncRenderState();
                 riftVisualPos = null;
                 pendingSpawnPos = null;
                 pendingSpawnTicksElapsed = 0;

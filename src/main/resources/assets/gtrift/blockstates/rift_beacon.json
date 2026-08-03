@@ -1,7 +1,7 @@
 {
   "variants": {
     "": {
-      "model": "gtrift:block/rift_beacon"
+      "model": "gtrift:block/machine/rift_beacon"
     }
   }
 }

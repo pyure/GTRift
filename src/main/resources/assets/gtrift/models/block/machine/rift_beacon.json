@@ -1,0 +1,84 @@
+{
+  "parent": "minecraft:block/block",
+  "loader": "gtceu:machine",
+  "machine": "gtrift:rift_beacon",
+  "texture_overrides": {
+    "top": "gtceu:block/casings/voltage/lv/top",
+    "side": "gtceu:block/casings/voltage/lv/side",
+    "bottom": "gtceu:block/casings/voltage/lv/bottom"
+  },
+  "variants": {
+    "is_formed=false,rift_state=inactive": {
+      "model": {
+        "parent": "gtceu:block/machine/template/sided/sided",
+        "textures": {
+          "top": "gtceu:block/casings/voltage/lv/top",
+          "side": "gtceu:block/casings/voltage/lv/side",
+          "bottom": "gtceu:block/casings/voltage/lv/bottom",
+          "overlay_front": "gtrift:block/multiblock/rift_beacon/overlay_front",
+          "overlay_front_emissive": "gtrift:block/multiblock/rift_beacon/overlay_front_emissive"
+        }
+      }
+    },
+    "is_formed=false,rift_state=charging": {
+      "model": {
+        "parent": "gtceu:block/machine/template/sided/sided",
+        "textures": {
+          "top": "gtceu:block/casings/voltage/lv/top",
+          "side": "gtceu:block/casings/voltage/lv/side",
+          "bottom": "gtceu:block/casings/voltage/lv/bottom",
+          "overlay_front": "gtrift:block/multiblock/rift_beacon/overlay_front",
+          "overlay_front_emissive": "gtrift:block/multiblock/rift_beacon/overlay_front_emissive"
+        }
+      }
+    },
+    "is_formed=false,rift_state=rift_open": {
+      "model": {
+        "parent": "gtceu:block/machine/template/sided/sided",
+        "textures": {
+          "top": "gtceu:block/casings/voltage/lv/top",
+          "side": "gtceu:block/casings/voltage/lv/side",
+          "bottom": "gtceu:block/casings/voltage/lv/bottom",
+          "overlay_front": "gtrift:block/multiblock/rift_beacon/overlay_front",
+          "overlay_front_emissive": "gtrift:block/multiblock/rift_beacon/overlay_front_emissive"
+        }
+      }
+    },
+    "is_formed=true,rift_state=inactive": {
+      "model": {
+        "parent": "gtceu:block/machine/template/sided/sided",
+        "textures": {
+          "top": "gtceu:block/casings/voltage/lv/top",
+          "side": "gtceu:block/casings/voltage/lv/side",
+          "bottom": "gtceu:block/casings/voltage/lv/bottom",
+          "overlay_front": "gtrift:block/multiblock/rift_beacon/overlay_front",
+          "overlay_front_emissive": "gtrift:block/multiblock/rift_beacon/overlay_front_emissive"
+        }
+      }
+    },
+    "is_formed=true,rift_state=charging": {
+      "model": {
+        "parent": "gtceu:block/machine/template/sided/sided",
+        "textures": {
+          "top": "gtceu:block/casings/voltage/lv/top",
+          "side": "gtceu:block/casings/voltage/lv/side",
+          "bottom": "gtceu:block/casings/voltage/lv/bottom",
+          "overlay_front": "gtrift:block/multiblock/rift_beacon/overlay_front_paused",
+          "overlay_front_emissive": "gtrift:block/multiblock/rift_beacon/overlay_front_paused_emissive"
+        }
+      }
+    },
+    "is_formed=true,rift_state=rift_open": {
+      "model": {
+        "parent": "gtceu:block/machine/template/sided/sided",
+        "textures": {
+          "top": "gtceu:block/casings/voltage/lv/top",
+          "side": "gtceu:block/casings/voltage/lv/side",
+          "bottom": "gtceu:block/casings/voltage/lv/bottom",
+          "overlay_front": "gtrift:block/multiblock/rift_beacon/overlay_front_active",
+          "overlay_front_emissive": "gtrift:block/multiblock/rift_beacon/overlay_front_active_emissive"
+        }
+      }
+    }
+  }
+}
