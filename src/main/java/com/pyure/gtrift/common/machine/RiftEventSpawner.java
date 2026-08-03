@@ -47,16 +47,41 @@ public class RiftEventSpawner {
      */
     public static Mob trySpawnMob(ServerLevel level, BlockPos beaconPos, int difficultyTier,
                                    BlockPos riftDirectionPos) {
+        BlockPos spawnPos = findSpawnPosition(level, beaconPos, level.getRandom(), riftDirectionPos);
+        if (spawnPos == null) return null;
+        return trySpawnMob(level, spawnPos, difficultyTier);
+    }
+
+    /**
+     * Spawns at an already-chosen position rather than picking one itself — used by
+     * RiftBeaconMachine's spawn-warning-flare delay, where the position is picked (and a particle
+     * flare fired there) some ticks before the mob actually appears, so the flare and the eventual
+     * spawn land at the exact same spot. The 4-arg overload above (the normal, atomic path) is just a
+     * thin wrapper around this one, rolling elite/normal itself since it doesn't need to know in
+     * advance which it'll be.
+     */
+    public static Mob trySpawnMob(ServerLevel level, BlockPos spawnPos, int difficultyTier) {
+        return trySpawnMob(level, spawnPos, difficultyTier, rollIsElite(level.getRandom(), difficultyTier));
+    }
+
+    /**
+     * Same elite-chance formula RiftBeaconMachine's spawn-warning-flare logic now rolls in advance
+     * (at flare-decision time, not spawn time) so it knows whether to show the exaggerated elite flare
+     * before the mob type itself has been chosen — pulled out to its own method so both that caller and
+     * the 3-arg trySpawnMob above share exactly one formula.
+     */
+    public static boolean rollIsElite(RandomSource random, int difficultyTier) {
+        double eliteChance = Math.min(0.25, 0.05 + 0.02 * difficultyTier);
+        return random.nextDouble() < eliteChance;
+    }
+
+    /** Spawns at an already-chosen position with an already-decided elite/normal outcome — see rollIsElite's own doc comment for why the decision needs to happen earlier than this call for the elite-flare feature. */
+    public static Mob trySpawnMob(ServerLevel level, BlockPos spawnPos, int difficultyTier, boolean isElite) {
         RandomSource random = level.getRandom();
 
-        double eliteChance = Math.min(0.25, 0.05 + 0.02 * difficultyTier);
-        boolean isElite = random.nextDouble() < eliteChance;
         RiftMobPool pool = isElite ? RiftMobPool.ELITE : RiftMobPool.NORMAL;
         RiftMobPoolEntry entry = pool.pickRandom(random, level.dimension());
         if (entry == null) return null;
-
-        BlockPos spawnPos = findSpawnPosition(level, beaconPos, random, riftDirectionPos);
-        if (spawnPos == null) return null;
 
         Entity spawned = entry.entityType().spawn(level, spawnPos, MobSpawnType.EVENT);
         if (!(spawned instanceof Mob mob)) return null;

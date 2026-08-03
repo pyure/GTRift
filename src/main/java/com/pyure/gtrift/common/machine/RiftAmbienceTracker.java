@@ -8,6 +8,7 @@ import com.pyure.gtrift.common.network.AmbienceSyncPacket;
 import com.pyure.gtrift.common.network.GTRiftNetworking;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +28,7 @@ import net.minecraftforge.server.ServerLifecycleHooks;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.joml.Vector3f;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -59,6 +61,40 @@ public class RiftAmbienceTracker {
     public static final int LIGHTNING_SURGE_INTERVAL_TICKS = 5;
     public static final int LIGHTNING_BACKGROUND_CHANCE_DENOMINATOR = 400; // ~once per 20s
 
+    // Deliberately the same RGB as RiftAmbienceRenderer.DOME_RED/GREEN/BLUE (client-side, can't be
+    // referenced directly from this Dist-agnostic class) — kept in sync by hand so the ground motes
+    // read as part of the same "the world itself is stained red" effect as the sky dome. If the dome
+    // color is ever retuned again (it already was once, after the "pinkish" playtesting finding),
+    // update this to match.
+    private static final Vector3f GROUND_PARTICLE_COLOR = new Vector3f(0.4f, 0.03f, 0.04f);
+    private static final float GROUND_PARTICLE_SCALE = 0.65f;
+    private static final int GROUND_PARTICLE_COUNT = 2;
+    private static final int GROUND_PARTICLE_MIN_INTERVAL_TICKS = 20; // 1s, at ramp = 1
+    private static final int GROUND_PARTICLE_MAX_INTERVAL_TICKS = 60; // 3s, at ramp = 0
+
+    // Spawn-warning flare — deliberately more pronounced than the passive ambient motes above
+    // (brighter, larger, denser), since RiftBeaconMachine now fires this repeatedly across a ~2s
+    // window rather than once: a single one-shot burst at the ambient tuning tested as "barely
+    // noticeable" in real playtesting.
+    private static final Vector3f SPAWN_FLARE_COLOR = new Vector3f(0.85f, 0.1f, 0.08f);
+    private static final float SPAWN_FLARE_SCALE = 1.3f;
+    private static final int SPAWN_FLARE_PARTICLE_COUNT = 10;
+
+    // Elite spawn-warning flare — deliberately far more exaggerated than the regular one above.
+    // "Particles actually going up a couple blocks" isn't achievable with DustParticleOptions
+    // specifically: confirmed (this exact codebase, RiftBeaconMachine's own rift-visual crimson
+    // accent) that dust particles don't respond to velocity, only position — so the "height" here is
+    // real vertical SCATTER (a tall yOffset jitter puts particles anywhere within roughly that range
+    // above the ground point, all at once) rather than particles individually climbing over time. That
+    // still reads as "reaching up into the air," just via a different mechanism than true rise motion.
+    private static final Vector3f ELITE_SPAWN_FLARE_RED_COLOR = new Vector3f(0.9f, 0.05f, 0.03f);
+    // Not pure (0,0,0) — near-black stays reliably visible; true black risks blending into shadow/night.
+    private static final Vector3f ELITE_SPAWN_FLARE_BLACK_COLOR = new Vector3f(0.05f, 0.05f, 0.05f);
+    private static final float ELITE_SPAWN_FLARE_BLACK_FRACTION = 0.2f;
+    private static final float ELITE_SPAWN_FLARE_SCALE = 1.6f;
+    private static final int ELITE_SPAWN_FLARE_PARTICLE_COUNT = 25;
+    private static final double ELITE_SPAWN_FLARE_HEIGHT_JITTER = 0.9; // ~2 blocks of scatter (roughly 2 std devs)
+
     private record BeaconKey(ResourceKey<Level> dimension, BlockPos pos) {}
 
     private static final class TrackedBeacon {
@@ -76,6 +112,7 @@ public class RiftAmbienceTracker {
         BeaconState lastObservedState = BeaconState.IDLE;
         int surgeStrikesRemaining = 0;
         int surgeTicksUntilNext = 0;
+        int groundParticleTicksUntilNext = 0;
         // Bookkeeping RiftEliteTracker gets for free from ServerBossEvent.getPlayers() — this
         // packet-based system has to track subscriber membership itself, so it knows who to send an
         // explicit clear packet to once they drop out (including after a dimension change, via UUID
@@ -171,6 +208,7 @@ public class RiftAmbienceTracker {
 
                 tickDarkness(level, tracked);
                 tickLightning(level, tracked);
+                tickGroundParticles(level, tracked);
             } else {
                 if (!tracked.fading) {
                     tracked.fading = true;
@@ -291,5 +329,51 @@ public class RiftAmbienceTracker {
         bolt.moveTo(Vec3.atBottomCenterOf(strikePos));
         bolt.setVisualOnly(true);
         level.addFreshEntity(bolt);
+    }
+
+    /**
+     * Subtle red dust motes scattered on the ground within spawnRadius — no alpha channel on
+     * DustParticleOptions to fade with ramp, so "ramping in with charge" happens via frequency instead
+     * (sparse during early charging, reaching a still-subtle steady rate by RIFT_OPEN).
+     */
+    private static void tickGroundParticles(ServerLevel level, TrackedBeacon tracked) {
+        tracked.groundParticleTicksUntilNext--;
+        if (tracked.groundParticleTicksUntilNext > 0) return;
+        tracked.groundParticleTicksUntilNext = (int) Mth.lerp(
+                tracked.ramp, GROUND_PARTICLE_MAX_INTERVAL_TICKS, GROUND_PARTICLE_MIN_INTERVAL_TICKS);
+
+        BlockPos pos = RiftEventSpawner.findSpawnPosition(level, tracked.pos, level.getRandom());
+        if (pos == null) return;
+        emitGroundParticles(level, pos, GROUND_PARTICLE_COLOR, GROUND_PARTICLE_SCALE, GROUND_PARTICLE_COUNT, 0.0);
+    }
+
+    /**
+     * One burst of the spawn-warning flare's own (more pronounced) visual — RiftBeaconMachine calls
+     * this repeatedly across its ~2s lead+tail window, not once, so this method itself doesn't own any
+     * timing/repetition, just a single emission at the given spot.
+     */
+    public static void emitSpawnWarningFlare(ServerLevel level, BlockPos pos) {
+        emitGroundParticles(level, pos, SPAWN_FLARE_COLOR, SPAWN_FLARE_SCALE, SPAWN_FLARE_PARTICLE_COUNT, 0.0);
+    }
+
+    /**
+     * One burst of the far-more-exaggerated elite variant — 80/20 red/black split (two separate
+     * sendParticles calls, since a single DustParticleOptions instance is one fixed color), taller
+     * vertical scatter than the regular flare. Same "called repeatedly by the caller" shape as
+     * emitSpawnWarningFlare above.
+     */
+    public static void emitEliteSpawnWarningFlare(ServerLevel level, BlockPos pos) {
+        int blackCount = Math.round(ELITE_SPAWN_FLARE_PARTICLE_COUNT * ELITE_SPAWN_FLARE_BLACK_FRACTION);
+        int redCount = ELITE_SPAWN_FLARE_PARTICLE_COUNT - blackCount;
+        emitGroundParticles(level, pos, ELITE_SPAWN_FLARE_RED_COLOR, ELITE_SPAWN_FLARE_SCALE, redCount,
+                ELITE_SPAWN_FLARE_HEIGHT_JITTER);
+        emitGroundParticles(level, pos, ELITE_SPAWN_FLARE_BLACK_COLOR, ELITE_SPAWN_FLARE_SCALE, blackCount,
+                ELITE_SPAWN_FLARE_HEIGHT_JITTER);
+    }
+
+    private static void emitGroundParticles(ServerLevel level, BlockPos pos, Vector3f color, float scale,
+                                             int count, double yOffset) {
+        level.sendParticles(new DustParticleOptions(color, scale),
+                pos.getX() + 0.5, pos.getY() + 0.1, pos.getZ() + 0.5, count, 0.3, yOffset, 0.3, 0.0);
     }
 }

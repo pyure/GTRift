@@ -65,6 +65,21 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
     private static final Vector3f VISUAL_CRIMSON_COLOR = new Vector3f(0.55f, 0.05f, 0.08f);
     private static final float VISUAL_CRIMSON_SCALE = 1.2f; // the requested 20% larger
 
+    // Spawn-warning flare timing — see beaconTick()'s RIFT_OPEN spawn-timer logic. Private constants
+    // rather than GTRiftConfig values, to keep this addition small. Tuned after real playtesting
+    // found a single one-shot burst 0.5s before spawn "barely noticeable": particles now emit
+    // repeatedly across the whole window (not just once), the mob spawns partway through rather than
+    // right at the end (so it visibly steps out of an already-established effect, not a blip that
+    // immediately vanishes), and continue a bit further afterward.
+    private static final int SPAWN_FLARE_LEAD_TICKS = 30; // 1.5s from flare start to the mob spawning
+    private static final int SPAWN_FLARE_TAIL_TICKS = 10; // +0.5s more of particles after the mob spawns
+    private static final int SPAWN_FLARE_EMIT_INTERVAL_TICKS = 3; // ~150ms between bursts — reads as continuous, not isolated pops
+
+    // Elite variant — deliberately far more exaggerated (longer, denser) per explicit request.
+    private static final int ELITE_SPAWN_FLARE_LEAD_TICKS = 70; // 3.5s from flare start to the elite spawning
+    private static final int ELITE_SPAWN_FLARE_TAIL_TICKS = 10; // +0.5s more of particles after it spawns
+    private static final int ELITE_SPAWN_FLARE_EMIT_INTERVAL_TICKS = 2; // ~100ms — denser stream than the regular flare's
+
     // Every class level that adds its own @Persisted/@DescSynced fields must declare and return
     // its own merged holder — MetaMachine/MultiblockControllerMachine each do the same. Skipping
     // this means getFieldHolder() dispatches to MultiblockControllerMachine's version, which knows
@@ -101,6 +116,19 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
 
     /** Not persisted — resetting the spawn cadence on chunk reload is harmless. */
     private int spawnTimerTicks = 0;
+
+    /**
+     * Not persisted — same reasoning as spawnTimerTicks; losing a ~2s-old pending flare on a reload is
+     * inconsequential. Non-null for the whole SPAWN_FLARE_LEAD_TICKS+SPAWN_FLARE_TAIL_TICKS window
+     * (see beaconTick()'s RIFT_OPEN spawn-timer logic) — the flare, the eventual spawn, and the
+     * tail-end particles afterward all share this exact position.
+     */
+    private BlockPos pendingSpawnPos = null;
+    private int pendingSpawnTicksElapsed = 0;
+    private boolean pendingSpawnMobSpawned = false;
+    // Rolled once at flare-decision time (not at actual spawn time) so the flare visual and the
+    // eventual spawn agree on elite vs. normal — see RiftEventSpawner.rollIsElite's own doc comment.
+    private boolean pendingSpawnIsElite = false;
 
     /** Not persisted — same reasoning as spawnTimerTicks. */
     private int quadrantRefreshTicks = 0;
@@ -223,6 +251,10 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
                 state = BeaconState.CHARGED;
                 state = BeaconState.RIFT_OPEN;
                 spawnTimerTicks = 0;
+                pendingSpawnPos = null;
+                pendingSpawnTicksElapsed = 0;
+                pendingSpawnMobSpawned = false;
+                pendingSpawnIsElite = false;
                 quadrantRefreshTicks = 0;
                 currentQuadrant = 0;
                 riftVisualAngle = 0f;
@@ -242,10 +274,50 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
             chargeStored = Math.max(0, chargeStored - GTValues.VA[selectedDifficultyTier]);
 
             if (getLevel() instanceof ServerLevel serverLevel) {
-                spawnTimerTicks--;
-                if (spawnTimerTicks <= 0) {
-                    RiftEventSpawner.trySpawnMob(serverLevel, getPos(), selectedDifficultyTier, riftVisualPos);
-                    spawnTimerTicks = GTRiftConfig.INSTANCE.spawnIntervalTicks;
+                if (pendingSpawnPos == null) {
+                    spawnTimerTicks--;
+                    if (spawnTimerTicks <= 0) {
+                        // Pick the position AND roll elite/normal now — before the mob itself is
+                        // chosen — so the flare visual (regular vs. the far-more-exaggerated elite
+                        // variant) matches what actually ends up spawning. The eventual trySpawnMob
+                        // call below reuses this same decision rather than rolling its own. If the
+                        // beacon leaves RIFT_OPEN before the mob has spawned (controller broken, event
+                        // ends), this whole branch simply stops running and the mob never spawns —
+                        // same "spawning stops immediately" behavior the base event already has, no
+                        // extra handling needed for it.
+                        pendingSpawnPos = RiftEventSpawner.findSpawnPosition(
+                                serverLevel, getPos(), serverLevel.getRandom(), riftVisualPos);
+                        if (pendingSpawnPos != null) {
+                            pendingSpawnTicksElapsed = 0;
+                            pendingSpawnMobSpawned = false;
+                            pendingSpawnIsElite = RiftEventSpawner.rollIsElite(serverLevel.getRandom(), selectedDifficultyTier);
+                            emitPendingSpawnFlare(serverLevel);
+                        } else {
+                            spawnTimerTicks = GTRiftConfig.INSTANCE.spawnIntervalTicks;
+                        }
+                    }
+                } else {
+                    pendingSpawnTicksElapsed++;
+                    int leadTicks = pendingSpawnIsElite ? ELITE_SPAWN_FLARE_LEAD_TICKS : SPAWN_FLARE_LEAD_TICKS;
+                    int tailTicks = pendingSpawnIsElite ? ELITE_SPAWN_FLARE_TAIL_TICKS : SPAWN_FLARE_TAIL_TICKS;
+                    int emitInterval = pendingSpawnIsElite ? ELITE_SPAWN_FLARE_EMIT_INTERVAL_TICKS : SPAWN_FLARE_EMIT_INTERVAL_TICKS;
+
+                    // Repeated bursts across the whole lead+tail window, not one single burst — a
+                    // single one-shot flare tested as "barely noticeable"; this reads as a sustained
+                    // effect the mob visibly steps out of, not a blip.
+                    if (pendingSpawnTicksElapsed % emitInterval == 0) {
+                        emitPendingSpawnFlare(serverLevel);
+                    }
+
+                    if (!pendingSpawnMobSpawned && pendingSpawnTicksElapsed >= leadTicks) {
+                        RiftEventSpawner.trySpawnMob(serverLevel, pendingSpawnPos, selectedDifficultyTier, pendingSpawnIsElite);
+                        pendingSpawnMobSpawned = true;
+                    }
+
+                    if (pendingSpawnTicksElapsed >= leadTicks + tailTicks) {
+                        pendingSpawnPos = null;
+                        spawnTimerTicks = GTRiftConfig.INSTANCE.spawnIntervalTicks;
+                    }
                 }
 
                 quadrantRefreshTicks--;
@@ -268,7 +340,20 @@ public class RiftBeaconMachine extends MultiblockControllerMachine implements IF
                 chargeTarget = 0;
                 state = BeaconState.IDLE;
                 riftVisualPos = null;
+                pendingSpawnPos = null;
+                pendingSpawnTicksElapsed = 0;
+                pendingSpawnMobSpawned = false;
+                pendingSpawnIsElite = false;
             }
+        }
+    }
+
+    /** Dispatches to whichever spawn-warning-flare visual matches the pending spawn's already-rolled elite/normal outcome. */
+    private void emitPendingSpawnFlare(ServerLevel serverLevel) {
+        if (pendingSpawnIsElite) {
+            RiftAmbienceTracker.emitEliteSpawnWarningFlare(serverLevel, pendingSpawnPos);
+        } else {
+            RiftAmbienceTracker.emitSpawnWarningFlare(serverLevel, pendingSpawnPos);
         }
     }
 
