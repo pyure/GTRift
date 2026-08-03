@@ -24,7 +24,7 @@ public class GTRiftBlocks {
                 .multiblock("rift_beacon", RiftBeaconMachine::new)
                 .modelProperty(RiftBeaconRenderState.PROPERTY, RiftBeaconRenderState.INACTIVE)
                 // Structure: bottom layer (Y=0) is the controller + a fixed ULV-casing wall (with up to
-                // one energy hatch swapped in anywhere); a 2-tall glass/obsidian viewing column (Y=1-2);
+                // two energy hatches swapped in anywhere); a 2-tall glass/obsidian viewing column (Y=1-2);
                 // an HV-casing tier ring (Y=3, exactly 4 positions — this, not the bulk wall, is what
                 // RiftBeaconTierPredicate reads to determine RiftBeaconMachine.tier); a 4-tall redstone
                 // spire on top (Y=4-7). The wall being a single fixed casing (rather than any-tier, as
@@ -42,9 +42,9 @@ public class GTRiftBlocks {
                         .aisle("WWW", "GOG", "GOG", "HRH", "#R#", "#R#", "#R#", "#R#") // Z=1
                         .aisle("WSW", "#G#", "#G#", "#H#", "###", "###", "###", "###") // Z=0
                         .where('S', controller(blocks(definition.getBlock())))
-                        .where('W', blocks(GTBlocks.MACHINE_CASING_ULV.get()).setMinGlobalLimited(7)
+                        .where('W', blocks(GTBlocks.MACHINE_CASING_ULV.get()).setMinGlobalLimited(6)
                                 .or(abilities(PartAbility.INPUT_ENERGY)
-                                        .setMinGlobalLimited(0).setMaxGlobalLimited(1)))
+                                        .setMinGlobalLimited(0).setMaxGlobalLimited(2)))
                         .where('H', RiftBeaconTierPredicate.riftCasings()
                                 .setMinGlobalLimited(4).setMaxGlobalLimited(4))
                         .where('G', blocks(Blocks.GLASS))
