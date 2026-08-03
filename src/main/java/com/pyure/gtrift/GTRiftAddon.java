@@ -1,5 +1,6 @@
 package com.pyure.gtrift;
 
+import com.pyure.gtrift.common.data.GTRiftControllerRecipes;
 import com.pyure.gtrift.common.data.GTRiftRecipes;
 
 import com.gregtechceu.gtceu.api.addon.GTAddon;
@@ -32,6 +33,7 @@ public class GTRiftAddon implements IGTAddon {
     @Override
     public void addRecipes(Consumer<FinishedRecipe> consumer) {
         GTRiftRecipes.init(consumer);
+        GTRiftControllerRecipes.init(consumer);
     }
 
     @Override
