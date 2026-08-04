@@ -10,7 +10,9 @@ import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.registration.IRecipeRegistration;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.world.entity.EntityType;
@@ -28,6 +30,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +69,10 @@ public class RiftJeiPlugin implements IModPlugin {
     private static final Gson GSON = new Gson();
     private static final String UNRESTRICTED_KEY = "all";
 
+    /** Keeps weight alongside the already-styled line so pages can be sorted (weight descending)
+     *  right before display, without re-parsing anything. */
+    private record MobLine(int weight, Component component) {}
+
     @Override
     public ResourceLocation getPluginUid() {
         return PLUGIN_UID;
@@ -75,15 +82,20 @@ public class RiftJeiPlugin implements IModPlugin {
     public void registerRecipes(IRecipeRegistration registration) {
         if (ModList.get().isLoaded("rei") || ModList.get().isLoaded("emi")) return;
 
-        Map<String, List<String>> pages = new LinkedHashMap<>();
+        Map<String, List<MobLine>> pages = new LinkedHashMap<>();
         readDirectory("rift_mobs", null, pages);
         readDirectory("rift_elite_mobs", "Elite", pages);
 
-        for (Map.Entry<String, List<String>> page : pages.entrySet()) {
+        for (Map.Entry<String, List<MobLine>> page : pages.entrySet()) {
             List<Component> lines = new ArrayList<>();
-            lines.add(Component.literal(page.getKey().equals(UNRESTRICTED_KEY) ? "All dimensions" : page.getKey()));
-            for (String line : page.getValue()) {
-                lines.add(Component.literal(line));
+            lines.add(Component.literal(page.getKey().equals(UNRESTRICTED_KEY)
+                            ? "All dimensions" : dimensionDisplayName(page.getKey()))
+                    .withStyle(ChatFormatting.BOLD));
+
+            List<MobLine> sorted = new ArrayList<>(page.getValue());
+            sorted.sort(Comparator.comparingInt(MobLine::weight).reversed());
+            for (MobLine mobLine : sorted) {
+                lines.add(mobLine.component());
             }
             // addIngredientInfo internally builds one IJeiIngredientInfoRecipe per call and registers
             // it against JEI's own built-in RecipeTypes.INFORMATION category — confirmed by decompiling
@@ -94,7 +106,7 @@ public class RiftJeiPlugin implements IModPlugin {
         }
     }
 
-    private static void readDirectory(String directory, String poolLabel, Map<String, List<String>> pages) {
+    private static void readDirectory(String directory, String poolLabel, Map<String, List<MobLine>> pages) {
         Path dir = FMLPaths.CONFIGDIR.get().resolve(GTRift.MOD_ID).resolve(directory);
         if (!Files.isDirectory(dir)) return;
 
@@ -107,18 +119,25 @@ public class RiftJeiPlugin implements IModPlugin {
         }
     }
 
-    private static void readFile(Path file, String poolLabel, Map<String, List<String>> pages) {
+    private static void readFile(Path file, String poolLabel, Map<String, List<MobLine>> pages) {
         try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             JsonObject object = GSON.fromJson(reader, JsonObject.class);
             String entityId = GsonHelper.getAsString(object, "entity");
             int weight = GsonHelper.getAsInt(object, "weight");
+            // A weight-0 entry can never actually be picked (see RiftMobPool's weighted-random roll) —
+            // listing it here would just be noise, not a real possibility players should expect.
+            if (weight <= 0) return;
             String displayName = entityName(entityId);
-            String line = poolLabel != null
-                    ? "%s (weight %d) [%s]".formatted(displayName, weight, poolLabel)
-                    : "%s (weight %d)".formatted(displayName, weight);
+
+            MutableComponent component = Component.literal("%s (weight %d)".formatted(displayName, weight));
+            if (poolLabel != null) {
+                component.append(Component.literal(" "))
+                        .append(Component.literal("[%s]".formatted(poolLabel)).withStyle(ChatFormatting.DARK_RED));
+            }
+            MobLine mobLine = new MobLine(weight, component);
 
             for (String dimensionKey : readDimensionKeys(object)) {
-                pages.computeIfAbsent(dimensionKey, k -> new ArrayList<>()).add(line);
+                pages.computeIfAbsent(dimensionKey, k -> new ArrayList<>()).add(mobLine);
             }
         } catch (Exception e) {
             LOGGER.warn("[jei] Failed to read {} for the dimension info page, skipping: {}", file, e.getMessage());
@@ -128,6 +147,25 @@ public class RiftJeiPlugin implements IModPlugin {
     private static String entityName(String entityId) {
         EntityType<?> entityType = ForgeRegistries.ENTITY_TYPES.getValue(new ResourceLocation(entityId));
         return entityType != null ? entityType.getDescription().getString() : entityId;
+    }
+
+    /**
+     * Turns a raw dimension id ("minecraft:the_nether") into a readable name ("The Nether") by
+     * title-casing its path — no live dimension/level registry lookup, since this plugin can't rely on
+     * one being available (see class doc). Works the same way for vanilla and modded ids alike, rather
+     * than special-casing a handful of known ones. Falls back to the raw key if it isn't even a valid
+     * ResourceLocation (matches readDimensionKeys' own "never reject, just look odd" philosophy).
+     */
+    private static String dimensionDisplayName(String dimensionKey) {
+        ResourceLocation id = ResourceLocation.tryParse(dimensionKey);
+        String path = id != null ? id.getPath() : dimensionKey;
+        StringBuilder result = new StringBuilder();
+        for (String word : path.split("[_/]")) {
+            if (word.isEmpty()) continue;
+            if (result.length() > 0) result.append(' ');
+            result.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return result.isEmpty() ? dimensionKey : result.toString();
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.pyure.gtrift.common.block;
 
 import com.pyure.gtrift.GTRift;
+import com.pyure.gtrift.common.GTRiftCreativeTabs;
 import com.pyure.gtrift.common.machine.RiftBeaconMachine;
 import com.pyure.gtrift.common.machine.RiftBeaconRenderState;
 import com.pyure.gtrift.common.machine.RiftBeaconTierPredicate;
@@ -22,6 +23,7 @@ public class GTRiftBlocks {
     public static MultiblockMachineDefinition RIFT_BEACON;
 
     public static void init() {
+        GTRift.REGISTRATE.creativeModeTab(() -> GTRiftCreativeTabs.RIFT);
         RIFT_BEACON = GTRift.REGISTRATE
                 .multiblock("rift_beacon", RiftBeaconMachine::new)
                 // Horizontal-only rotation (faces the player on placement, wrenchable through the 4

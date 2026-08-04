@@ -1,6 +1,7 @@
 package com.pyure.gtrift.common.item;
 
 import com.pyure.gtrift.GTRift;
+import com.pyure.gtrift.common.GTRiftCreativeTabs;
 import com.pyure.gtrift.common.data.ShardType;
 
 import com.tterrag.registrate.util.entry.ItemEntry;
@@ -21,6 +22,7 @@ public class GTRiftItems {
     private static final Map<String, ItemEntry<RiftShardItem>> RIFT_SHARDS = new LinkedHashMap<>();
 
     public static void init() {
+        GTRift.REGISTRATE.creativeModeTab(() -> GTRiftCreativeTabs.RIFT);
         for (ShardType type : GTRift.SHARD_TYPE_LOAD_RESULT.shardTypes()) {
             ItemEntry<RiftShardItem> entry = GTRift.REGISTRATE
                     .item(type.sanitizedId() + "_shard", p -> new RiftShardItem(type, p))
