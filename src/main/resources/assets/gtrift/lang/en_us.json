@@ -7,5 +7,6 @@
   "gtrift.quality.extremely_rich": "Extremely Rich",
 
   "block.gtrift.rift_beacon": "Rift Beacon",
-  "gtceu.machine.rift_beacon.tooltip": "Charges from attached energy hatches, then opens a rift that summons hostile mobs to fight for loot. Casing tier caps the maximum difficulty."
+  "gtceu.machine.rift_beacon.tooltip": "Charges from attached energy hatches, then opens a rift that summons hostile mobs to fight for loot.",
+  "gtceu.machine.rift_beacon.tooltip.tier": "Casing on 4th level affects machine tier!"
 }

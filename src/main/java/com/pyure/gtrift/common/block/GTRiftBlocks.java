@@ -11,6 +11,7 @@ import com.gregtechceu.gtceu.api.machine.multiblock.PartAbility;
 import com.gregtechceu.gtceu.api.pattern.FactoryBlockPattern;
 import com.gregtechceu.gtceu.common.data.GTBlocks;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Blocks;
 
@@ -71,7 +72,9 @@ public class GTRiftBlocks {
                 // rift_beacon.json (no datagen in this project) — this callback would only matter if
                 // a real `runData` task ever generated those files instead.
                 .blockModel((ctx, prov) -> {})
-                .tooltips(Component.translatable("gtceu.machine.rift_beacon.tooltip"))
+                .tooltips(Component.translatable("gtceu.machine.rift_beacon.tooltip"),
+                        Component.translatable("gtceu.machine.rift_beacon.tooltip.tier")
+                                .withStyle(ChatFormatting.BLUE))
                 .register();
     }
 }
