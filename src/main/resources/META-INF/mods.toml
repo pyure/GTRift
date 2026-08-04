@@ -42,3 +42,17 @@ license="${mod_license}"
     versionRange="[11,)"
     ordering="AFTER"
     side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="emi"
+    mandatory=false
+    versionRange="[1,)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="roughlyenoughitems"
+    mandatory=false
+    versionRange="[12,)"
+    ordering="AFTER"
+    side="BOTH"
