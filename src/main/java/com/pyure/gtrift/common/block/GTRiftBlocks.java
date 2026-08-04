@@ -5,6 +5,7 @@ import com.pyure.gtrift.common.machine.RiftBeaconMachine;
 import com.pyure.gtrift.common.machine.RiftBeaconRenderState;
 import com.pyure.gtrift.common.machine.RiftBeaconTierPredicate;
 
+import com.gregtechceu.gtceu.api.data.RotationState;
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
 import com.gregtechceu.gtceu.api.machine.multiblock.PartAbility;
 import com.gregtechceu.gtceu.api.pattern.FactoryBlockPattern;
@@ -22,6 +23,18 @@ public class GTRiftBlocks {
     public static void init() {
         RIFT_BEACON = GTRift.REGISTRATE
                 .multiblock("rift_beacon", RiftBeaconMachine::new)
+                // Horizontal-only rotation (faces the player on placement, wrenchable through the 4
+                // horizontal directions) — matches VatControllerMachine in ../GTBacterialStrains, a
+                // similar ground-standing (never wall/ceiling-mounted) multiblock. RotationState.ALL was
+                // tried first (matching most GTCEu multiblocks) but produces a real artifact for a
+                // floor-only structure: MetaMachineBlock.getStateForPlacement only ever sets
+                // upwards_facing when the block is placed facing straight up/down, so a normal
+                // horizontal placement leaves it at the block's registered default (north, not up) —
+                // and a facing/upwards_facing rotation matrix built for genuinely wall/ceiling-mountable
+                // machines (e.g. CentralMonitorMachine, copied as the template) applies a real Z-axis
+                // roll to that combination for east/west facings, tilting the model sideways.
+                // NON_Y_AXIS has no upwards_facing property at all, sidestepping this entirely.
+                .rotationState(RotationState.NON_Y_AXIS)
                 .modelProperty(RiftBeaconRenderState.PROPERTY, RiftBeaconRenderState.INACTIVE)
                 // Structure: bottom layer (Y=0) is the controller + a fixed ULV-casing wall (with up to
                 // two energy hatches swapped in anywhere); a 2-tall glass/obsidian viewing column (Y=1-2);

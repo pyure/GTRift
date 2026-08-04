@@ -1,7 +1,19 @@
 {
   "variants": {
-    "": {
+    "facing=north": {
       "model": "gtrift:block/machine/rift_beacon"
+    },
+    "facing=south": {
+      "model": "gtrift:block/machine/rift_beacon",
+      "y": 180
+    },
+    "facing=east": {
+      "model": "gtrift:block/machine/rift_beacon",
+      "y": 90
+    },
+    "facing=west": {
+      "model": "gtrift:block/machine/rift_beacon",
+      "y": 270
     }
   }
 }
