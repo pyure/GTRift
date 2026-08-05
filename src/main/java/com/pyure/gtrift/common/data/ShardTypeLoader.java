@@ -44,7 +44,9 @@ public class ShardTypeLoader {
 
     private static final Logger LOGGER = LogManager.getLogger("gtrift");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final String DIRECTORY = "rift_shard_types";
+    // Package-private (not private) so RiftShardOreDatagen can reuse the real folder name instead of
+    // duplicating the string literal.
+    static final String DIRECTORY = "rift_shard_types";
 
     public record ShardTypeLoadResult(List<ShardType> shardTypes, List<String> issues) {}
 
@@ -178,45 +180,6 @@ public class ShardTypeLoader {
             outputs.add(new ShardTypeOutput(itemId, chance));
         }
         return Optional.of(outputs);
-    }
-
-    /**
-     * Shipped example: a real GT raw-ore-themed shard type. Item ids are the real
-     * TagPrefix.rawOre-generated items ("gtceu:raw_diamond" etc — no "_ore" suffix, confirmed against
-     * the real registry; the spec's own original worked example used a fictional "_ore"-suffixed id
-     * that doesn't exist in 7.5.3). Writes it the first time `directory` doesn't exist — never
-     * regenerates an existing (even emptied) folder, same semantics as RiftMobPoolLoader.
-     */
-    public static void extractDefaultsIfMissing() {
-        extractDefaultsIfMissing(configDir());
-    }
-
-    public static void extractDefaultsIfMissing(Path directory) {
-        if (Files.exists(directory)) return;
-
-        JsonObject json = new JsonObject();
-        json.addProperty("type", "diamond");
-        json.addProperty("color", "#1B9AAA");
-        JsonArray outputs = new JsonArray();
-        outputs.add(defaultOutput("gtceu:raw_diamond", 0.05));
-        outputs.add(defaultOutput("gtceu:raw_graphite", 0.30));
-        outputs.add(defaultOutput("gtceu:raw_coal", 0.10));
-        json.add("outputs", outputs);
-
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(directory.resolve("diamond.json"), GSON.toJson(json), StandardCharsets.UTF_8);
-            LOGGER.info("Extracted default shard type(s) to {}", directory);
-        } catch (IOException e) {
-            LOGGER.warn("Failed to extract default shard type(s) to {}", directory, e);
-        }
-    }
-
-    private static JsonObject defaultOutput(String itemId, double chance) {
-        JsonObject entry = new JsonObject();
-        entry.addProperty("item", itemId);
-        entry.addProperty("chance", chance);
-        return entry;
     }
 
     private static Path configDir() {

@@ -137,16 +137,20 @@ dependencies {
     // Jade — full jar via modImplementation so ModDevGradle remaps it for dev runs
     modImplementation("curse.maven:jade-324717:${jade_file_id}") { transitive = false }
 
-    // EMI/REI — neither ships a slim API-only jar like JEI does, so the single full artifact is used
-    // directly via modImplementation, same remapping rationale as JEI/Jade above. REI requires its
-    // architectury companion dependency on the classpath too, plus cloth_config >=10.0 (REI's own
+    // EMI/REI — neither ships a slim API-only jar like JEI does, so the single full artifact would
+    // otherwise go directly to modImplementation, same remapping rationale as JEI/Jade above. REI
+    // requires its architectury companion dependency too, plus cloth_config >=10.0 (REI's own
     // mods.toml declares this as mandatory — confirmed the hard way, a missing cloth_config crashes
     // mod loading entirely, not just REI's own feature). cloth-config isn't published on
     // maven.shedaniel.me directly, only via CurseForge — same curse.maven repo Jade already uses below.
-    modImplementation("dev.emi:emi-forge:${emi_version}") { transitive = false }
-    modImplementation("dev.architectury:architectury-forge:${architectury_version}") { transitive = false }
-    modImplementation("me.shedaniel:RoughlyEnoughItems-forge:${rei_version}") { transitive = false }
-    modImplementation("curse.maven:cloth-config-348521:${cloth_config_file_id}") { transitive = false }
+    // Currently modCompileOnly (not modImplementation) for all four: keeps everything compiling — any
+    // EMI/REI-referencing plugin code still type-checks — while dropping them off the actual runtime
+    // classpath, so only JEI is active for manual runClient testing. Swap back to modImplementation to
+    // reactivate either one.
+    modCompileOnly("dev.emi:emi-forge:${emi_version}") { transitive = false }
+    modCompileOnly("dev.architectury:architectury-forge:${architectury_version}") { transitive = false }
+    modCompileOnly("me.shedaniel:RoughlyEnoughItems-forge:${rei_version}") { transitive = false }
+    modCompileOnly("curse.maven:cloth-config-348521:${cloth_config_file_id}") { transitive = false }
 }
 
 tasks.named('processResources', ProcessResources).configure {
