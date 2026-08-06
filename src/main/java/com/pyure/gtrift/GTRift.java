@@ -3,7 +3,6 @@ package com.pyure.gtrift;
 import com.pyure.gtrift.client.ClientProxy;
 import com.pyure.gtrift.common.CommonProxy;
 import com.pyure.gtrift.common.config.GTRiftConfig;
-import com.pyure.gtrift.common.data.RiftMobPoolLoader;
 import com.pyure.gtrift.common.data.ShardTypeLoader;
 import com.pyure.gtrift.common.network.GTRiftNetworking;
 import com.pyure.gtrift.common.sound.GTRiftSounds;
@@ -28,12 +27,11 @@ public class GTRift {
     public GTRift() {
         GTRiftConfig.init();
         GTRiftNetworking.register();
-        RiftMobPoolLoader.extractDefaultsIfMissing("rift_mobs");
-        RiftMobPoolLoader.extractDefaultsIfMissing("rift_elite_mobs");
-        // No ShardTypeLoader.extractDefaultsIfMissing() equivalent here anymore — real ore-vein-driven
-        // generation (RiftShardOreDatagen.onServerAboutToStart) replaces the old hardcoded "diamond"
-        // placeholder. That runs later (ServerAboutToStartEvent, after GT's own ore vein registry
-        // populates), so a truly fresh install correctly finds nothing here on its first boot.
+        // No RiftMobPoolLoader.extractDefaultsIfMissing()/ShardTypeLoader.extractDefaultsIfMissing()
+        // equivalent here anymore — real generation (RiftShardOreDatagen/RiftMobPoolDatagen, both
+        // hooking ServerAboutToStartEvent) replaces both old hardcoded-placeholder paths. Both run
+        // later, after GT's own ore vein registry populates, so a truly fresh install correctly finds
+        // nothing here on its first boot.
         SHARD_TYPE_LOAD_RESULT = ShardTypeLoader.loadAll();
         LOGGER.info("Loaded {} shard type(s) ({} issue(s))",
                 SHARD_TYPE_LOAD_RESULT.shardTypes().size(), SHARD_TYPE_LOAD_RESULT.issues().size());

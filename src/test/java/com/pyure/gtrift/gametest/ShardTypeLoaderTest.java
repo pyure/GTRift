@@ -7,6 +7,7 @@ import com.pyure.gtrift.common.data.ShardTypeLoader.ShardTypeLoadResult;
 
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
@@ -17,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.Set;
 
 /**
  * Pure logic — no world state needed, template = "empty", same pattern as RiftEventSpawnerDropTest.
@@ -134,6 +137,79 @@ public class ShardTypeLoaderTest {
                 "expected both malformed-color files to be rejected, got %s".formatted(result.shardTypes()));
         helper.assertTrue(result.issues().isEmpty(),
                 "malformed color is warn-tier, not error-tier — expected no issues, got %s".formatted(result.issues()));
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void legacyFileWithNoDimensionsOrVeinWeightLoadsWithBothEmpty(GameTestHelper helper) {
+        Path dir = newScratchDir();
+        writeFile(dir, "legacy.json", """
+                {
+                  "type": "legacy",
+                  "color": "#1B9AAA",
+                  "outputs": []
+                }
+                """);
+
+        ShardTypeLoadResult result = ShardTypeLoader.loadAll(dir);
+        ShardType legacy = findType(result, "legacy").orElseThrow();
+
+        helper.assertTrue(legacy.dimensions().isEmpty(), "expected no dimensions, got %s".formatted(legacy.dimensions()));
+        helper.assertTrue(legacy.veinWeight().isEmpty(), "expected no vein_weight, got %s".formatted(legacy.veinWeight()));
+        helper.assertTrue(result.issues().isEmpty(), "expected no issues, got %s".formatted(result.issues()));
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void malformedVeinWeightDegradesToEmptyWithoutRejectingFile(GameTestHelper helper) {
+        Path dir = newScratchDir();
+        writeFile(dir, "malformed.json", """
+                {
+                  "type": "malformed",
+                  "color": "#1B9AAA",
+                  "outputs": [],
+                  "dimensions": "minecraft:the_nether",
+                  "vein_weight": "not_a_number"
+                }
+                """);
+
+        ShardTypeLoadResult result = ShardTypeLoader.loadAll(dir);
+        ShardType malformed = findType(result, "malformed").orElseThrow();
+
+        helper.assertTrue(malformed.veinWeight().isEmpty(),
+                "expected malformed vein_weight to degrade to empty, got %s".formatted(malformed.veinWeight()));
+        helper.assertTrue(malformed.dimensions().equals(Optional.of(Set.of(new ResourceLocation("minecraft:the_nether")))),
+                "expected the well-formed sibling 'dimensions' field to still parse correctly, got %s"
+                        .formatted(malformed.dimensions()));
+        helper.assertTrue(result.issues().isEmpty(),
+                "malformed vein_weight is non-fatal metadata — expected no issues, got %s".formatted(result.issues()));
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void wellFormedDimensionsAndVeinWeightParseCorrectly(GameTestHelper helper) {
+        Path dir = newScratchDir();
+        writeFile(dir, "well_formed.json", """
+                {
+                  "type": "well_formed",
+                  "color": "#1B9AAA",
+                  "outputs": [],
+                  "dimensions": ["minecraft:overworld", "minecraft:the_end"],
+                  "vein_weight": 42
+                }
+                """);
+
+        ShardTypeLoadResult result = ShardTypeLoader.loadAll(dir);
+        ShardType wellFormed = findType(result, "well_formed").orElseThrow();
+
+        helper.assertTrue(wellFormed.dimensions().equals(Optional.of(Set.of(
+                        new ResourceLocation("minecraft:overworld"), new ResourceLocation("minecraft:the_end")))),
+                "expected both dimension ids, got %s".formatted(wellFormed.dimensions()));
+        helper.assertTrue(wellFormed.veinWeight().equals(OptionalInt.of(42)),
+                "expected vein_weight 42, got %s".formatted(wellFormed.veinWeight()));
 
         helper.succeed();
     }

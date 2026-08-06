@@ -50,14 +50,11 @@ import java.util.Set;
  * 1. Datapacks/other mods, via the normal SimpleJsonResourceReloadListener scan of
  *    data/&lt;namespace&gt;/&lt;directory&gt;/*.json across every loaded pack — how another mod or a
  *    world's own datapack can ADD entries with zero GTRift-specific integration.
- * 2. GTRift's own defaults, extracted to config/gtrift/&lt;directory&gt;/*.json the first time that
- *    folder doesn't exist, then read directly from there afterward — a real, standalone,
- *    player-editable/deletable file, not something sealed inside the mod jar. Deliberately NOT
- *    shipped as bundled data resources: a file baked into the jar can only be customized by
- *    authoring a whole separate overriding datapack at the exact same resource path, which isn't
- *    reasonable to expect a player to know how to do or to discover unprompted. Deleting a specific
- *    file (or the whole folder, treated as "reset to defaults" on next launch) here is a normal,
- *    self-explanatory action — the same expectation a config file already sets.
+ * 2. config/gtrift/&lt;directory&gt;/*.json, read directly from there — a real, standalone,
+ *    player-editable/deletable file, not something sealed inside the mod jar. This loader only ever
+ *    reads whatever's already on disk; real content there comes from RiftMobPoolDatagen (ore-vein-
+ *    shard-type-driven generation, see its own class doc) — the same split of responsibility
+ *    RiftShardOreDatagen/ShardTypeLoader already use for shard types.
  */
 @Mod.EventBusSubscriber(modid = GTRift.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
@@ -65,15 +62,9 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
     private static final Logger LOGGER = LogManager.getLogger("gtrift");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    /**
-     * min/max default to 1 in the shipped defaults below; minTier is a GTValues.VN tier name
-     * ("ulv", "lv", "mv", ...), not a raw int, to match the player-facing JSON format.
-     */
-    private record DefaultDrop(String type, String quality, double chance, int min, int max, String minTier,
-                                double eliteChanceMultiplier, double eliteAmountMultiplier) {}
-
-    private record DefaultEntry(String entityId, int weight, double healthMultiplier, double damageMultiplier,
-                                 double speedMultiplier, List<DefaultDrop> drops) {}
+    /** Shared with RiftMobPoolDatagen so the two directory names have one source of truth. */
+    static final String NORMAL_DIRECTORY = "rift_mobs";
+    static final String ELITE_DIRECTORY = "rift_elite_mobs";
 
     /**
      * `fatal` means "skip the whole entry" (mirrors the unknown-entity treatment in parseEntry) — an
@@ -82,42 +73,6 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
      */
     public record DimensionParseResult(Optional<Set<ResourceKey<Level>>> dimensions, List<String> issues,
                                         boolean fatal) {}
-
-    /**
-     * Illustrative defaults, not a tuned economy: each mob has one common drop (high chance, no tier
-     * gate) plus one rarer bonus drop, some of them tier-gated, to demonstrate multiple simultaneous
-     * drops, low-chance rarity, and per-tier availability out of the box.
-     *
-     * The eliteChanceMultiplier/eliteAmountMultiplier values here are only meaningful for the
-     * rift_elite_mobs copy — in RiftEventSpawner.trySpawnMob, the elite coin-flip picks which POOL to
-     * draw from before a mob is ever chosen, so a mob drawn from RiftMobPool.NORMAL (rift_mobs) can
-     * never end up tagged gtrift_elite, and its drops' multiplier fields can never fire. This list is
-     * shared between both directories (same mob types in both, matching the original Phase 5 design:
-     * "an elite without any addons installed is still one of the same 4 vanilla mobs, just
-     * glowing/named/boss-barred"), so extractDefaultsIfMissing writes these multiplier values only for
-     * rift_elite_mobs and forces 1.0 (an honest no-op) for rift_mobs, rather than shipping a nonzero
-     * value that implies a behavior that can't happen there.
-     *
-     * healthMultiplier/damageMultiplier/speedMultiplier are unrelated to the elite system above — they
-     * apply to every entry in both pools, on top of the flat per-tier stat bonus (see
-     * RiftEventSpawner.applyDifficultyScaling). Zombie's 1.2 health here is purely illustrative, so a
-     * pack dev opening a freshly-extracted config sees the field in use, not just documented —
-     * extractDefaultsIfMissing only writes a multiplier key when it's not the 1.0 no-op, so the other
-     * three entries' JSON stays uncluttered.
-     */
-    private static final List<DefaultEntry> DEFAULT_ENTRIES = List.of(
-            new DefaultEntry("minecraft:zombie", 100, 1.2, 1.0, 1.0, List.of(
-                    new DefaultDrop("diamond", "normal", 0.9, 1, 1, "ulv", 1.2, 2.0),
-                    new DefaultDrop("diamond", "rich", 0.1, 1, 1, "ulv", 3.0, 2.0))),
-            new DefaultEntry("minecraft:skeleton", 100, 1.0, 1.0, 1.0, List.of(
-                    new DefaultDrop("diamond", "normal", 0.9, 1, 1, "ulv", 1.2, 2.0),
-                    new DefaultDrop("diamond", "rich", 0.1, 1, 1, "ulv", 3.0, 2.0))),
-            new DefaultEntry("minecraft:spider", 100, 1.0, 1.0, 1.0, List.of(
-                    new DefaultDrop("diamond", "normal", 0.9, 1, 1, "ulv", 1.2, 2.0),
-                    new DefaultDrop("diamond", "rich", 0.08, 1, 1, "lv", 3.0, 2.0))),
-            new DefaultEntry("minecraft:husk", 100, 1.0, 1.0, 1.0, List.of(
-                    new DefaultDrop("diamond", "normal", 0.9, 1, 1, "ulv", 1.2, 2.0),
-                    new DefaultDrop("diamond", "extremely_rich", 0.05, 1, 1, "mv", 3.0, 2.0))));
 
     private final String directory;
     private final RiftMobPool target;
@@ -142,69 +97,6 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
         this.directory = directory;
         this.target = target;
         this.validDimensions = validDimensions;
-    }
-
-    /**
-     * Writes the default entries to config/gtrift/&lt;directory&gt;/ the first time that folder
-     * doesn't exist — never regenerates an existing (even emptied) folder, so a player who deletes
-     * individual files, or empties the whole folder, has that respected permanently. Deleting the
-     * whole folder itself is treated as "reset to defaults" on next launch, matching common config
-     * conventions (e.g. GTRiftConfig's own YAML file does the same if deleted).
-     */
-    public static void extractDefaultsIfMissing(String directory) {
-        Path dir = FMLPaths.CONFIGDIR.get().resolve(GTRift.MOD_ID).resolve(directory);
-        if (Files.exists(dir)) return;
-
-        // Only mobs drawn from RiftMobPool.ELITE (this directory) can ever be tagged gtrift_elite —
-        // see the DEFAULT_ENTRIES doc comment above. A mob from rift_mobs can't, so the multiplier
-        // keys are omitted from that file entirely rather than written as an inert "1.0" — parseDrops
-        // already treats a missing key as 1.0 (see its GsonHelper.getAsDouble(..., 1.0) defaults), so
-        // this changes nothing behaviorally, it just doesn't ship a field that can never do anything.
-        boolean elitePool = directory.equals("rift_elite_mobs");
-
-        try {
-            Files.createDirectories(dir);
-            for (DefaultEntry defaultEntry : DEFAULT_ENTRIES) {
-                JsonObject json = new JsonObject();
-                json.addProperty("entity", defaultEntry.entityId());
-                json.addProperty("weight", defaultEntry.weight());
-                // Only written when not the 1.0 no-op, same "don't ship a field that changes nothing"
-                // reasoning as the elite multipliers below, just on a different condition (every entry
-                // in both pools can use these, so it's per-value here, not per-pool).
-                if (defaultEntry.healthMultiplier() != 1.0) {
-                    json.addProperty("health_multiplier", defaultEntry.healthMultiplier());
-                }
-                if (defaultEntry.damageMultiplier() != 1.0) {
-                    json.addProperty("damage_multiplier", defaultEntry.damageMultiplier());
-                }
-                if (defaultEntry.speedMultiplier() != 1.0) {
-                    json.addProperty("speed_multiplier", defaultEntry.speedMultiplier());
-                }
-
-                JsonArray dropsArray = new JsonArray();
-                for (DefaultDrop drop : defaultEntry.drops()) {
-                    JsonObject dropJson = new JsonObject();
-                    dropJson.addProperty("type", drop.type());
-                    dropJson.addProperty("quality", drop.quality());
-                    dropJson.addProperty("chance", drop.chance());
-                    dropJson.addProperty("min", drop.min());
-                    dropJson.addProperty("max", drop.max());
-                    dropJson.addProperty("min_tier", drop.minTier());
-                    if (elitePool) {
-                        dropJson.addProperty("elite_chance_multiplier", drop.eliteChanceMultiplier());
-                        dropJson.addProperty("elite_amount_multiplier", drop.eliteAmountMultiplier());
-                    }
-                    dropsArray.add(dropJson);
-                }
-                json.add("drops", dropsArray);
-
-                String fileName = new ResourceLocation(defaultEntry.entityId()).getPath() + ".json";
-                Files.writeString(dir.resolve(fileName), GSON.toJson(json), StandardCharsets.UTF_8);
-            }
-            LOGGER.info("Extracted default entries for rift mob pool '{}' to {}", directory, dir);
-        } catch (IOException e) {
-            LOGGER.warn("Failed to extract default entries for rift mob pool '{}' to {}", directory, dir, e);
-        }
     }
 
     @Override
@@ -395,7 +287,7 @@ public class RiftMobPoolLoader extends SimpleJsonResourceReloadListener {
             validDimensions.add(Registries.levelStemToLevel(levelStemKey));
         }
 
-        event.addListener(new RiftMobPoolLoader("rift_mobs", RiftMobPool.NORMAL, validDimensions));
-        event.addListener(new RiftMobPoolLoader("rift_elite_mobs", RiftMobPool.ELITE, validDimensions));
+        event.addListener(new RiftMobPoolLoader(NORMAL_DIRECTORY, RiftMobPool.NORMAL, validDimensions));
+        event.addListener(new RiftMobPoolLoader(ELITE_DIRECTORY, RiftMobPool.ELITE, validDimensions));
     }
 }

@@ -23,9 +23,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.Set;
 
 /**
  * Loads shard types from config/gtrift/rift_shard_types/*.json only — no datapack merge, and no live
@@ -119,7 +122,45 @@ public class ShardTypeLoader {
         }
 
         sanitizedIdToSource.put(sanitizedId, file);
-        return Optional.of(new ShardType(rawType, sanitizedId, color, outputs.get()));
+        Optional<Set<ResourceLocation>> dimensions = parseDimensions(object, file);
+        OptionalInt veinWeight = parseVeinWeight(object, file);
+        return Optional.of(new ShardType(rawType, sanitizedId, color, outputs.get(), dimensions, veinWeight));
+    }
+
+    /**
+     * Both this and parseVeinWeight below are non-essential, generation-only metadata (see ShardType's
+     * own doc comment) — absence or a malformed value degrades silently to empty, never rejects the
+     * file, never recorded in `issues`. Unlike RiftMobPoolLoader's own "dimensions" parsing, there's no
+     * registry to validate resolved ids against here, so every value (well-formed or not) is accepted
+     * as-is; only genuinely unparseable JSON shapes fall back to empty.
+     */
+    private static Optional<Set<ResourceLocation>> parseDimensions(JsonObject object, Path file) {
+        if (!object.has("dimensions")) return Optional.empty();
+        try {
+            JsonElement element = object.get("dimensions");
+            Set<ResourceLocation> ids = new HashSet<>();
+            if (element.isJsonPrimitive()) {
+                ids.add(new ResourceLocation(element.getAsString()));
+            } else {
+                for (JsonElement item : element.getAsJsonArray()) {
+                    ids.add(new ResourceLocation(item.getAsString()));
+                }
+            }
+            return Optional.of(Set.copyOf(ids));
+        } catch (Exception e) {
+            LOGGER.warn("[{}] Malformed 'dimensions' in {}, ignoring: {}", DIRECTORY, file, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static OptionalInt parseVeinWeight(JsonObject object, Path file) {
+        if (!object.has("vein_weight")) return OptionalInt.empty();
+        try {
+            return OptionalInt.of(GsonHelper.getAsInt(object, "vein_weight"));
+        } catch (Exception e) {
+            LOGGER.warn("[{}] Malformed 'vein_weight' in {}, ignoring: {}", DIRECTORY, file, e.getMessage());
+            return OptionalInt.empty();
+        }
     }
 
     /**

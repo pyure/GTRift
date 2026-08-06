@@ -15,8 +15,10 @@ import com.google.gson.JsonObject;
 
 import it.unimi.dsi.fastutil.objects.ObjectIntPair;
 
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraftforge.event.server.ServerAboutToStartEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -76,11 +78,23 @@ public final class RiftShardOreDatagen {
      * re-normalized after dropping materials with no raw-ore item — so a vein with a lot of
      * unrepresented material honestly shows lower total chance rather than inflating what's left. A
      * zero-sum or fully-filtered vein still returns valid JSON with an empty outputs array, never throws.
+     *
+     * `dimensions`/`veinWeight` are written through unchanged from the vein's own real
+     * GTOreDefinition.dimensionFilter()/weight() — real per-mob-datagen-consumed metadata, not derived
+     * or guessed here. See ShardType's own doc comment for how they're consumed downstream.
      */
-    public static JsonObject buildShardTypeJson(ResourceLocation veinId, List<ObjectIntPair<Material>> materialChances) {
+    public static JsonObject buildShardTypeJson(ResourceLocation veinId, List<ObjectIntPair<Material>> materialChances,
+                                                 Set<ResourceKey<Level>> dimensions, int veinWeight) {
         JsonObject json = new JsonObject();
         json.addProperty("type", veinId.getPath());
         json.addProperty("color", colorForSeed(veinId.toString()));
+
+        JsonArray dimensionsArray = new JsonArray();
+        for (ResourceKey<Level> dimension : dimensions) {
+            dimensionsArray.add(dimension.location().toString());
+        }
+        json.add("dimensions", dimensionsArray);
+        json.addProperty("vein_weight", veinWeight);
 
         long sum = 0;
         for (ObjectIntPair<Material> pair : materialChances) {
@@ -140,7 +154,9 @@ public final class RiftShardOreDatagen {
             String sanitizedId = ShardType.sanitize(veinId.getPath());
             if (!claimed.add(sanitizedId)) continue; // already on disk, or claimed earlier this pass
 
-            JsonObject json = buildShardTypeJson(veinId, entry.getValue().veinGenerator().getValidMaterialsChances());
+            GTOreDefinition definition = entry.getValue();
+            JsonObject json = buildShardTypeJson(veinId, definition.veinGenerator().getValidMaterialsChances(),
+                    definition.dimensionFilter(), definition.weight());
             try {
                 Files.writeString(directory.resolve(sanitizedId + ".json"), GSON.toJson(json), StandardCharsets.UTF_8);
                 written.add(json.get("type").getAsString());

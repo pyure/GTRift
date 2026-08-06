@@ -1,14 +1,30 @@
 package com.pyure.gtrift.common.data;
 
+import net.minecraft.resources.ResourceLocation;
+
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
  * A pack-dev-defined shard type, loaded from config/gtrift/rift_shard_types/*.json (see
  * ShardTypeLoader). `rawType` is free text with no connection to GT's material system; `sanitizedId`
  * is the resource-path-safe id derived from it, used for the registered item's id.
+ *
+ * `dimensions`/`veinWeight` are populated only when this type was generated from an ore vein
+ * (RiftShardOreDatagen, from the vein's own GTOreDefinition.dimensionFilter()/weight()) — always
+ * absent on a hand-authored type, and never required. Stored as raw ResourceLocation ids, not
+ * ResourceKey&lt;Level&gt;, and deliberately unvalidated against any dimension registry —
+ * ShardTypeLoader runs at mod construction, before any registry access is reliably available (the
+ * same timing gap RiftMobPoolLoader hit and fixed via AddReloadListenerEvent's RegistryAccess, which
+ * ShardTypeLoader has no equivalent hook for). An unresolvable/garbage value here is simply inert
+ * metadata forever, consumed only by mob-pool datagen (which runs later, with real registry access,
+ * and treats an unresolvable dimension as "doesn't belong to any bucket," not an error).
  */
-public record ShardType(String rawType, String sanitizedId, int color, List<ShardTypeOutput> outputs) {
+public record ShardType(String rawType, String sanitizedId, int color, List<ShardTypeOutput> outputs,
+                         Optional<Set<ResourceLocation>> dimensions, OptionalInt veinWeight) {
 
     private static final Pattern INVALID_ID_CHARS = Pattern.compile("[^a-z0-9_.\\-]");
 

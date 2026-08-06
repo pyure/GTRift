@@ -13,8 +13,9 @@ import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Confirms the /gtrift shard_types command tree is registered correctly — structural check only
- * (CommandNode.getChild(...) tree walks), deliberately never calling .execute() or .parse().
+ * Confirms the /gtrift shard_types and /gtrift mob_pools command trees are registered correctly —
+ * structural check only (CommandNode.getChild(...) tree walks), deliberately never calling .execute()
+ * or .parse().
  *
  * An earlier version of this test actually executed "/gtrift shard_types fill" against the real config
  * directory. That's real file I/O (RiftShardOreDatagen.generateAll re-parses every existing shard type
@@ -24,8 +25,9 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
  * tick-count-based assertions in two completely unrelated RiftLootDropTest cases. Not a bug in
  * GTRiftCommands/RiftShardOreDatagen themselves — a test-isolation problem from doing real I/O against
  * shared state inside a concurrently-scheduled batch. The actual fill/wipe logic is already covered in
- * full isolation by RiftShardOreDatagenTest/RiftShardOreDatagenWipeTest; this test only needs to confirm
- * the Brigadier wiring itself, which a structural tree check does without any side effects.
+ * full isolation by RiftShardOreDatagenTest/RiftShardOreDatagenWipeTest (shard types) and
+ * RiftMobPoolDatagenTest (mob pools); this test only needs to confirm the Brigadier wiring itself, which
+ * a structural tree check does without any side effects — same reasoning applied to mob_pools below.
  */
 @PrefixGameTestTemplate(false)
 @GameTestHolder(GTRift.MOD_ID)
@@ -44,10 +46,20 @@ public class GTRiftCommandsTest {
 
         helper.assertTrue(shardTypes.getChild("fill") != null,
                 "expected '/gtrift shard_types fill' to be registered");
-        CommandNode<CommandSourceStack> wipe = shardTypes.getChild("wipe");
-        helper.assertTrue(wipe != null, "expected '/gtrift shard_types wipe' to be registered");
-        helper.assertTrue(wipe.getChild("confirm") != null,
+        CommandNode<CommandSourceStack> shardTypesWipe = shardTypes.getChild("wipe");
+        helper.assertTrue(shardTypesWipe != null, "expected '/gtrift shard_types wipe' to be registered");
+        helper.assertTrue(shardTypesWipe.getChild("confirm") != null,
                 "expected '/gtrift shard_types wipe confirm' to be registered");
+
+        CommandNode<CommandSourceStack> mobPools = root.getChild("mob_pools");
+        helper.assertTrue(mobPools != null, "expected '/gtrift mob_pools' to be registered");
+
+        helper.assertTrue(mobPools.getChild("fill") != null,
+                "expected '/gtrift mob_pools fill' to be registered");
+        CommandNode<CommandSourceStack> mobPoolsWipe = mobPools.getChild("wipe");
+        helper.assertTrue(mobPoolsWipe != null, "expected '/gtrift mob_pools wipe' to be registered");
+        helper.assertTrue(mobPoolsWipe.getChild("confirm") != null,
+                "expected '/gtrift mob_pools wipe confirm' to be registered");
 
         helper.succeed();
     }
