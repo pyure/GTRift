@@ -2,7 +2,9 @@ package com.pyure.gtrift.gametest;
 
 import com.pyure.gtrift.GTRift;
 import com.pyure.gtrift.client.ClientAmbienceState;
+import com.pyure.gtrift.client.ClientColumnState;
 import com.pyure.gtrift.common.network.AmbienceSyncPacket;
+import com.pyure.gtrift.common.network.RiftColumnSyncPacket;
 
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
@@ -11,6 +13,8 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
+
+import java.util.List;
 
 /**
  * Covers the two genuinely pure pieces of Phase 2: AmbienceSyncPacket's encode/decode round trip
@@ -229,6 +233,62 @@ public class AmbienceNetworkingTest {
                 "expected a new beacon to be able to claim the now-free music slot");
 
         ClientAmbienceState.clear();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void riftColumnSyncPacketRoundTripsAnActiveUpdate(GameTestHelper helper) {
+        List<BlockPos> columns = List.of(new BlockPos(1, 64, 1), new BlockPos(2, 64, 2), new BlockPos(3, 64, 3));
+        RiftColumnSyncPacket original = new RiftColumnSyncPacket(new BlockPos(12, 64, -34), true, columns);
+
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        original.encode(buf);
+        RiftColumnSyncPacket decoded = new RiftColumnSyncPacket(buf);
+
+        helper.assertTrue(decoded.beaconPos().equals(original.beaconPos()), "expected beaconPos to survive the round trip");
+        helper.assertTrue(decoded.active(), "expected active to survive the round trip as true");
+        helper.assertTrue(decoded.columns().equals(columns), "expected the columns list to survive the round trip");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void riftColumnSyncPacketRoundTripsAClearUpdate(GameTestHelper helper) {
+        RiftColumnSyncPacket original = new RiftColumnSyncPacket(new BlockPos(0, 0, 0), false, List.of());
+
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        original.encode(buf);
+        RiftColumnSyncPacket decoded = new RiftColumnSyncPacket(buf);
+
+        helper.assertTrue(!decoded.active(), "expected a clear packet's active flag to survive as false");
+        helper.assertTrue(decoded.columns().isEmpty(), "expected a clear packet's columns list to survive as empty");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void clientColumnStateFlattensColumnsAcrossMultipleBeacons(GameTestHelper helper) {
+        ClientColumnState.clear();
+        helper.assertTrue(ClientColumnState.allColumns().isEmpty(), "expected no columns before any put()");
+
+        BlockPos beaconA = new BlockPos(1, 64, 1);
+        BlockPos beaconB = new BlockPos(2, 64, 2);
+        List<BlockPos> columnsA = List.of(new BlockPos(10, 64, 10), new BlockPos(11, 64, 11));
+        List<BlockPos> columnsB = List.of(new BlockPos(20, 64, 20));
+
+        ClientColumnState.put(beaconA, columnsA);
+        ClientColumnState.put(beaconB, columnsB);
+        helper.assertTrue(ClientColumnState.trackedCount() == 2, "expected both beacons to be tracked");
+        helper.assertTrue(ClientColumnState.allColumns().size() == 3,
+                "expected allColumns to flatten both beacons' columns (2 + 1 = 3)");
+        helper.assertTrue(ClientColumnState.allColumns().containsAll(columnsA)
+                        && ClientColumnState.allColumns().containsAll(columnsB),
+                "expected allColumns to contain every column from both beacons");
+
+        ClientColumnState.remove(beaconA);
+        helper.assertTrue(ClientColumnState.allColumns().equals(columnsB),
+                "expected only beaconB's columns to remain after removing beaconA");
+
+        ClientColumnState.clear();
+        helper.assertTrue(ClientColumnState.allColumns().isEmpty(), "expected no columns after clear()");
         helper.succeed();
     }
 }

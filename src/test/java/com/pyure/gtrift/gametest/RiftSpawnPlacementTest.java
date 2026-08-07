@@ -12,6 +12,10 @@ import net.minecraft.util.RandomSource;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
  * Pure logic against a real ServerLevel (needed for findSpawnPosition's heightmap query) — no
  * structure content, template = "empty", same pattern as RiftLootTableTest's statistical checks.
@@ -266,6 +270,37 @@ public class RiftSpawnPlacementTest {
                 "with riftDirectionPos=null, expected ~%.1f%% in the arc (uniform, no slant applied), got %.1f%%"
                         .formatted(expectedInArcPercent, actualInArcPercent));
 
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void pickSlantTargetAlwaysReturnsAMemberOfTheList(GameTestHelper helper) {
+        List<BlockPos> columns = List.of(
+                new BlockPos(10, 64, 10), new BlockPos(-10, 64, 10),
+                new BlockPos(10, 64, -10), new BlockPos(-10, 64, -10));
+        RandomSource random = RandomSource.create();
+
+        Set<BlockPos> picked = new HashSet<>();
+        for (int i = 0; i < TRIALS; i++) {
+            BlockPos target = RiftEventSpawner.pickSlantTarget(random, columns);
+            helper.assertTrue(columns.contains(target),
+                    "pickSlantTarget returned %s, which isn't one of the given columns".formatted(target));
+            picked.add(target);
+        }
+
+        // Guards against an off-by-one that always returns the same index — over this many trials,
+        // every one of the 4 columns should show up at least once.
+        helper.assertTrue(picked.size() > 1,
+                "expected more than one distinct column to be picked over %d trials, only saw %s"
+                        .formatted(TRIALS, picked));
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void pickSlantTargetReturnsNullOnAnEmptyList(GameTestHelper helper) {
+        BlockPos target = RiftEventSpawner.pickSlantTarget(RandomSource.create(), List.of());
+        helper.assertTrue(target == null, "expected null for an empty column list, got %s".formatted(target));
         helper.succeed();
     }
 

@@ -6,6 +6,7 @@ import com.pyure.gtrift.GTRift;
 import com.pyure.gtrift.common.config.GTRiftConfig;
 import com.pyure.gtrift.common.network.AmbienceSyncPacket;
 import com.pyure.gtrift.common.network.GTRiftNetworking;
+import com.pyure.gtrift.common.network.RiftColumnSyncPacket;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
@@ -33,6 +34,7 @@ import org.joml.Vector3f;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -44,6 +46,15 @@ import java.util.UUID;
  * (multiblock invalidation or the controller block being broken outright) by fading its last-known
  * ramp to 0 over {@link #FADE_OUT_TICKS} instead of dropping to silence instantly, since ambience is
  * explicitly exempt from the base event's "no wind-down" behavior (see specs/ambience.md).
+ *
+ * Also dispatches column-position sync ({@link RiftColumnSyncPacket}, see
+ * plans/rift-multi-column.md Phase 3) — reuses this same self-polling loop and per-player
+ * in-range/subscribed bookkeeping rather than a second parallel tracker, since a column list only
+ * ever changes at the same two moments this loop already detects (entering RIFT_OPEN, no longer
+ * active for any reason) and needs the exact same "reach a player even after they've left range or
+ * the beacon has vanished outright" delivery this class already provides for ambience. Unlike the
+ * continuously-changing ramp, columns are static once generated and clear instantly rather than
+ * fading — see {@link TrackedBeacon#columnClearOwed}.
  */
 @Mod.EventBusSubscriber(modid = GTRift.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RiftAmbienceTracker {
@@ -118,6 +129,16 @@ public class RiftAmbienceTracker {
         // explicit clear packet to once they drop out (including after a dimension change, via UUID
         // lookup rather than re-checking this beacon's own dimension's player list).
         Set<UUID> subscribedPlayers = new HashSet<>();
+        // Snapshotted (List.copyOf, not a live reference) the moment enteringRiftOpen is detected —
+        // RiftBeaconMachine later calls .clear() on its own columnPositions list, and a shared
+        // reference would silently empty this copy too.
+        List<BlockPos> columnPositions = List.of();
+        // Set the instant this beacon stops being RIFT_OPEN while columnPositions was non-empty
+        // (inside the !fading guard below) — tells the next dispatch to send a one-time column clear
+        // to every previously-subscribed player still in range (players who dropped out of range
+        // entirely already get cleared via the existing subscribedPlayers-diff path). Reset to false
+        // once that clear is actually sent.
+        boolean columnClearOwed = false;
 
         TrackedBeacon(ResourceKey<Level> dimension, BlockPos pos) {
             this.dimension = dimension;
@@ -183,7 +204,7 @@ public class RiftAmbienceTracker {
             TrackedBeacon tracked = iterator.next();
             ServerLevel level = server.getLevel(tracked.dimension);
             if (level == null) {
-                dispatchAmbiencePacket(server, null, tracked, false);
+                dispatchBeaconPackets(server, null, tracked, false);
                 iterator.remove();
                 continue;
             }
@@ -204,6 +225,7 @@ public class RiftAmbienceTracker {
                 if (enteringRiftOpen) {
                     tracked.surgeStrikesRemaining = LIGHTNING_SURGE_STRIKE_COUNT;
                     tracked.surgeTicksUntilNext = 0;
+                    tracked.columnPositions = List.copyOf(beacon.columnPositions);
                 }
 
                 tickDarkness(level, tracked);
@@ -217,6 +239,12 @@ public class RiftAmbienceTracker {
                     LOGGER.debug("Beacon {} entering fade: machine={}, lastObservedState={}, startRamp={}",
                             tracked.pos, machine == null ? "null (block/BE gone)" : machine.getClass().getSimpleName(),
                             tracked.lastObservedState, tracked.fadeStartRamp);
+                    // Columns clear instantly, not on ambience's own gradual fade timer — see
+                    // TrackedBeacon.columnClearOwed's doc comment.
+                    if (!tracked.columnPositions.isEmpty()) {
+                        tracked.columnClearOwed = true;
+                        tracked.columnPositions = List.of();
+                    }
                 }
                 tracked.fadeTicksRemaining--;
                 tracked.ramp = tracked.fadeTicksRemaining > 0
@@ -231,22 +259,28 @@ public class RiftAmbienceTracker {
             }
 
             if (dispatchThisTick || justRemoved) {
-                dispatchAmbiencePacket(server, level, tracked, !justRemoved);
+                dispatchBeaconPackets(server, level, tracked, !justRemoved);
             }
         }
     }
 
     /**
-     * Sends the current ramp to every player within Math.max(backdropRadius, spawnRadius) of this
-     * beacon (the effective dispatch radius — clamped so a backdropRadius misconfigured smaller than
-     * spawnRadius can never leave players in active danger without visual coverage), and an explicit
-     * clear to anyone previously subscribed who's no longer in that set — looked up by UUID via the
-     * server's own player list rather than this beacon's own level's player list, so the clear still
-     * reaches someone who's already left the dimension by the time it's sent. beaconStillExists=false
-     * (the beacon's tracked entry just finished fading and was removed, or its dimension vanished
-     * outright) skips the "who's in range" scan entirely and clears every remaining subscriber.
+     * Sends the current ramp (and, when active, columns) to every player within
+     * Math.max(backdropRadius, spawnRadius) of this beacon (the effective dispatch radius — clamped
+     * so a backdropRadius misconfigured smaller than spawnRadius can never leave players in active
+     * danger without visual coverage), and an explicit clear to anyone previously subscribed who's no
+     * longer in that set — looked up by UUID via the server's own player list rather than this
+     * beacon's own level's player list, so the clear still reaches someone who's already left the
+     * dimension by the time it's sent. beaconStillExists=false (the beacon's tracked entry just
+     * finished fading and was removed, or its dimension vanished outright) skips the "who's in range"
+     * scan entirely and clears every remaining subscriber.
+     *
+     * Column packets are sent unconditionally alongside the ramp every cycle when columnPositions
+     * isn't empty (simpler than diffing "newly subscribed only," and the payload is trivial), plus a
+     * separate columnClearOwed pass below for players who are still in range but need an instant
+     * clear because the beacon itself just stopped having active columns.
      */
-    private static void dispatchAmbiencePacket(MinecraftServer server, ServerLevel level, TrackedBeacon tracked,
+    private static void dispatchBeaconPackets(MinecraftServer server, ServerLevel level, TrackedBeacon tracked,
                                                 boolean beaconStillExists) {
         Set<UUID> currentlyInRange = new HashSet<>();
         boolean musicEnabled = false;
@@ -269,6 +303,10 @@ public class RiftAmbienceTracker {
                             tracked.dimension, tracked.pos, level.dimension(), player.blockPosition(), encounterRadius);
                     GTRiftNetworking.sendToPlayer(player,
                             new AmbienceSyncPacket(tracked.pos, (float) tracked.ramp, true, playMusicForPlayer));
+                    if (!tracked.columnPositions.isEmpty()) {
+                        GTRiftNetworking.sendToPlayer(player,
+                                new RiftColumnSyncPacket(tracked.pos, true, tracked.columnPositions));
+                    }
                 }
             }
         }
@@ -279,12 +317,27 @@ public class RiftAmbienceTracker {
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
             if (player != null) {
                 GTRiftNetworking.sendToPlayer(player, new AmbienceSyncPacket(tracked.pos, 0f, false, false));
+                GTRiftNetworking.sendToPlayer(player, new RiftColumnSyncPacket(tracked.pos, false, List.of()));
                 cleared.add(uuid);
             }
         }
 
-        LOGGER.debug("dispatchAmbiencePacket beacon={} beaconStillExists={} ramp={} musicEnabled={} sentActive={} sentCleared={}",
-                tracked.pos, beaconStillExists, tracked.ramp, musicEnabled, currentlyInRange, cleared);
+        // Reaches players who DIDN'T leave range — the beacon itself just stopped having active
+        // columns (left RIFT_OPEN while still tracked, or was just removed outright). The `cleared`
+        // check avoids a redundant double-send to anyone who already got a clear above.
+        if (tracked.columnClearOwed) {
+            for (UUID uuid : tracked.subscribedPlayers) {
+                if (cleared.contains(uuid)) continue;
+                ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+                if (player != null) {
+                    GTRiftNetworking.sendToPlayer(player, new RiftColumnSyncPacket(tracked.pos, false, List.of()));
+                }
+            }
+            tracked.columnClearOwed = false;
+        }
+
+        LOGGER.debug("dispatchBeaconPackets beacon={} beaconStillExists={} ramp={} musicEnabled={} columns={} sentActive={} sentCleared={}",
+                tracked.pos, beaconStillExists, tracked.ramp, musicEnabled, tracked.columnPositions.size(), currentlyInRange, cleared);
 
         tracked.subscribedPlayers = currentlyInRange;
     }

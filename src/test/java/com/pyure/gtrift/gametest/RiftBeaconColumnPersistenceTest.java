@@ -14,24 +14,28 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Confirms riftVisualPos (the Phase 8 visual anchor, made @Persisted after a reload-mid-rift bug)
- * survives a save/load round-trip, using BlockEntity's own saveWithoutMetadata()/load() — the same
- * vanilla mechanism a real world reload goes through — rather than an actual close-and-reopen
- * cycle, which isn't practical within a single GameTest run.
+ * Confirms columnPositions (the multi-column rift visual/spawn-bias anchor list, replacing the old
+ * single riftVisualPos — see plans/rift-multi-column.md Phase 1) survives a save/load round-trip,
+ * using BlockEntity's own saveWithoutMetadata()/load() — the same vanilla mechanism a real world
+ * reload goes through — rather than an actual close-and-reopen cycle, which isn't practical within a
+ * single GameTest run.
  *
  * Best-effort: MetaMachineBlockEntity overrides load() but no save-side method is directly visible
  * on it (persistence may route partly through GTCEu's capability-attachment NBT mechanism, per
  * "ForgeCaps" appearing in captured structure NBT elsewhere in this project). If this test passes,
  * that's good evidence the field round-trips correctly; a real in-game save-and-reload mid-rift is
- * still the definitive check for the actual reported bug.
+ * still the definitive check.
  */
 @PrefixGameTestTemplate(false)
 @GameTestHolder(GTRift.MOD_ID)
-public class RiftBeaconVisualPersistenceTest {
+public class RiftBeaconColumnPersistenceTest {
 
     @GameTest(template = "rift_beacon", timeoutTicks = 200)
-    public static void riftVisualPosSurvivesSaveLoadRoundTrip(GameTestHelper helper) {
+    public static void columnPositionsSurviveSaveLoadRoundTrip(GameTestHelper helper) {
         BlockEntity holder = helper.getBlockEntity(new BlockPos(1, 1, 0));
         if (!(holder instanceof MetaMachineBlockEntity metaMachineBlockEntity)) {
             helper.fail("wrong block at relative pos [1,1,0]!");
@@ -43,8 +47,12 @@ public class RiftBeaconVisualPersistenceTest {
             return;
         }
 
-        BlockPos testPos = beacon.getPos().offset(5, 0, 7);
-        beacon.riftVisualPos = testPos;
+        List<BlockPos> testPositions = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            testPositions.add(beacon.getPos().offset(i, 0, i * 2));
+        }
+        beacon.columnPositions.clear();
+        beacon.columnPositions.addAll(testPositions);
 
         CompoundTag saved = metaMachineBlockEntity.saveWithoutMetadata();
         metaMachineBlockEntity.load(saved);
@@ -55,9 +63,9 @@ public class RiftBeaconVisualPersistenceTest {
         helper.assertTrue(reloadedMachine instanceof RiftBeaconMachine, "machine type changed after reload!");
         RiftBeaconMachine reloadedBeacon = (RiftBeaconMachine) reloadedMachine;
 
-        helper.assertTrue(testPos.equals(reloadedBeacon.riftVisualPos),
-                "riftVisualPos did not survive the save/load round-trip (was %s, now %s)"
-                        .formatted(testPos, reloadedBeacon.riftVisualPos));
+        helper.assertTrue(testPositions.equals(reloadedBeacon.columnPositions),
+                "columnPositions did not survive the save/load round-trip (was %s, now %s)"
+                        .formatted(testPositions, reloadedBeacon.columnPositions));
 
         helper.succeed();
     }

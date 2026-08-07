@@ -2,6 +2,7 @@ package com.pyure.gtrift.common.network;
 
 import com.pyure.gtrift.GTRift;
 import com.pyure.gtrift.client.ClientAmbienceState;
+import com.pyure.gtrift.client.ClientColumnState;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -16,8 +17,8 @@ import org.apache.logging.log4j.Logger;
 import java.util.function.Supplier;
 
 /**
- * First networking channel in this codebase. AmbienceSyncPacket is the only message on it so far,
- * server -> client only.
+ * First networking channel in this codebase. AmbienceSyncPacket and RiftColumnSyncPacket are the two
+ * messages on it so far, both server -> client only.
  */
 public class GTRiftNetworking {
 
@@ -38,6 +39,10 @@ public class GTRiftNetworking {
                 AmbienceSyncPacket::encode,
                 AmbienceSyncPacket::new,
                 GTRiftNetworking::handleAmbienceSync);
+        CHANNEL.registerMessage(nextPacketId++, RiftColumnSyncPacket.class,
+                RiftColumnSyncPacket::encode,
+                RiftColumnSyncPacket::new,
+                GTRiftNetworking::handleColumnSync);
     }
 
     // ClientAmbienceState has no Minecraft-client-only imports (see its own doc comment), so this
@@ -57,7 +62,27 @@ public class GTRiftNetworking {
         ctx.setPacketHandled(true);
     }
 
+    // ClientColumnState has no Minecraft-client-only imports (see its own doc comment), same
+    // reasoning as handleAmbienceSync above.
+    private static void handleColumnSync(RiftColumnSyncPacket packet, Supplier<NetworkEvent.Context> ctxSupplier) {
+        NetworkEvent.Context ctx = ctxSupplier.get();
+        ctx.enqueueWork(() -> {
+            LOGGER.debug("Client received RiftColumnSyncPacket beacon={} active={} columns={}",
+                    packet.beaconPos(), packet.active(), packet.columns().size());
+            if (packet.active()) {
+                ClientColumnState.put(packet.beaconPos(), packet.columns());
+            } else {
+                ClientColumnState.remove(packet.beaconPos());
+            }
+        });
+        ctx.setPacketHandled(true);
+    }
+
     public static void sendToPlayer(ServerPlayer player, AmbienceSyncPacket packet) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
+    }
+
+    public static void sendToPlayer(ServerPlayer player, RiftColumnSyncPacket packet) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
     }
 }

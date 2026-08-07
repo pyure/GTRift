@@ -41,9 +41,10 @@ public class RiftEventSpawner {
     };
 
     /**
-     * riftDirectionPos: the beacon's current rift-visual anchor (RiftBeaconMachine.riftVisualPos),
-     * used to slant spawn angles toward it — null is valid (no rift open, or Phase 8 visual disabled
-     * some other way) and simply disables the angular slant for this call.
+     * riftDirectionPos: one of the beacon's current rift-open columns (RiftBeaconMachine.columnPositions),
+     * picked fresh per call via pickSlantTarget — used to slant spawn angles toward it — null is
+     * valid (no rift open, or the column list happened to be empty) and simply disables the angular
+     * slant for this call.
      */
     public static Mob trySpawnMob(ServerLevel level, BlockPos beaconPos, int difficultyTier,
                                    BlockPos riftDirectionPos) {
@@ -125,16 +126,17 @@ public class RiftEventSpawner {
         return drops.stream().filter(drop -> drop.minTier() <= difficultyTier).toList();
     }
 
-    // No-slant overload — used for the initial riftVisualPos roll (that call is what DEFINES the
-    // rift direction, so it can't slant toward a direction that doesn't exist yet) and by any
-    // caller that only cares about the distance bias (e.g. RiftSpawnPlacementTest's existing
-    // near/far checks, which keep working unchanged against this overload).
+    // No-slant overload — used for each of RiftBeaconMachine.generateColumnPositions' 30 independent
+    // column rolls (those calls are what DEFINE the possible rift directions, so they can't slant
+    // toward a direction that doesn't exist yet) and by any caller that only cares about the
+    // distance bias (e.g. RiftSpawnPlacementTest's existing near/far checks, which keep working
+    // unchanged against this overload).
     public static BlockPos findSpawnPosition(ServerLevel level, BlockPos beaconPos, RandomSource random) {
         return findSpawnPosition(level, beaconPos, random, null);
     }
 
     // Public (not private) so RiftBeaconMachine can reuse the same ring-position logic for its
-    // rift-visual anchor point, and RiftSpawnPlacementTest (a different package, per this
+    // column anchors, and RiftSpawnPlacementTest (a different package, per this
     // project's gametest convention) can exercise it directly.
     public static BlockPos findSpawnPosition(ServerLevel level, BlockPos beaconPos, RandomSource random,
                                               BlockPos riftDirectionPos) {
@@ -182,6 +184,17 @@ public class RiftEventSpawner {
             }
         }
         return best;
+    }
+
+    /**
+     * Picks one column uniformly at random (with replacement — every call is an independent pick,
+     * so the same column can come up again on the very next call) to pass as findSpawnPosition's
+     * riftDirectionPos. Returns null on a null/empty list — degrades to findSpawnPosition's existing
+     * "no slant, sample the angle uniformly" behavior rather than a special case.
+     */
+    public static BlockPos pickSlantTarget(RandomSource random, List<BlockPos> columns) {
+        if (columns == null || columns.isEmpty()) return null;
+        return columns.get(random.nextInt(columns.size()));
     }
 
     // Flat additive bonus per tier, not a shared multiplier — deliberately so stats with very

@@ -105,6 +105,7 @@ public class RiftAmbienceRenderer {
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientAmbienceState.clear();
+        ClientColumnState.clear();
         Minecraft.getInstance().getMusicManager().stopPlaying();
     }
 
