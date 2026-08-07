@@ -9,6 +9,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
@@ -17,8 +18,32 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Pure logic against a real ServerLevel (needed for findSpawnPosition's heightmap query) — no
- * structure content, template = "empty", same pattern as RiftLootTableTest's statistical checks.
+ * Pure logic against a real ServerLevel (needed for findSpawnPosition's heightmap query) — the
+ * statistical tests below use "spawn_placement_area" (160x1x160, all-air, same zero-blocks
+ * convention as "empty" but a much bigger bounding box) rather than plain "empty", with their
+ * reference beacon position at its center, not a corner, and a real solid floor built at runtime
+ * via flattenGroundAtBeaconLevel (see that method's own doc comment for why). See
+ * plans/rift_version_2.txt for the fuller investigation, across two real findings:
+ *
+ * 1. GameTest packs every registered test into one shared world on a tight grid
+ *    (GameTestBatchRunner.createStructuresForBatch — only ~5-6 blocks between adjacent tests' own
+ *    structures, confirmed by reading the real placement code). A test's own structure size only
+ *    pushes away the *next* test placed after it in the grid (east/south), not whatever was already
+ *    placed before it (west/north) — hence centering the reference point in a large-enough symmetric
+ *    footprint, not just enlarging the structure with the reference point left at its corner.
+ * 2. This alone turned out not to be sufficient: this modded environment's "flat" GameTest world is
+ *    NOT actually flat at runtime (confirmed by direct height-map logging, not assumed from
+ *    WorldPresets.FLAT being requested in source — some mod, plausibly GTCEu's own worldgen for ore
+ *    veins, overrides what that preset actually generates). Real height variation was measured
+ *    starting just ~20 blocks from the beacon, well inside the 60-block sampling radius, which
+ *    findSpawnPosition's closest-Y-of-5 candidate selection was reacting to. A large all-air claimed
+ *    area does nothing about this — air doesn't override real terrain that's already there. The fix
+ *    is a real solid floor, built high enough (local Y 200, ~124 blocks above the highest terrain
+ *    height measured) that it's always the topmost block regardless of what real terrain sits below
+ *    it, genuinely flattening the sampling area rather than just claiming space around it.
+ *
+ * The two pickSlantTarget tests below don't touch real terrain at all and stay on the plain "empty"
+ * template.
  *
  * Sets GTRiftConfig.INSTANCE's fields directly to known values rather than relying on whatever the
  * generated config file happens to contain, for a deterministic expected result.
@@ -33,10 +58,9 @@ import java.util.Set;
  * return one raw distance sample, it evaluates POSITION_CANDIDATES=5 independently-rolled candidates
  * and returns whichever has the closest Y to the beacon — a pre-existing selection mechanism (not
  * introduced by the near-bias) that measurably skews the resulting distance distribution away from
- * the simple uniform model (confirmed: a 0%-near-chance run measured ~36% in a band whose own share
- * of the uniform range is 30%, well beyond sampling noise at 20k trials). The bias check here is
- * "does the near band's share move in the right direction and rough magnitude," not an exact match
- * to a theoretical model that doesn't account for that selection step.
+ * the simple uniform model. The bias check here is "does the near band's share move in the right
+ * direction and rough magnitude," not an exact match to a theoretical model that doesn't account for
+ * that selection step.
  */
 @PrefixGameTestTemplate(false)
 @GameTestHolder(GTRift.MOD_ID)
@@ -45,7 +69,30 @@ public class RiftSpawnPlacementTest {
     private static final int TRIALS = 20_000;
     private static final double TOLERANCE_PERCENT = 10.0;
 
-    @GameTest(template = "empty")
+    // The beacon stands one block above this floor — matches the existing "beacon at local Y+1"
+    // convention this class already used before the elevation fix.
+    private static final int FLOOR_LOCAL_Y = 200;
+    private static final int BEACON_LOCAL_Y = FLOOR_LOCAL_Y + 1;
+
+    /**
+     * Builds a real solid stone floor across the whole 160x160 claimed footprint at FLOOR_LOCAL_Y —
+     * high enough (measured real terrain topped out at height 76 in absolute coordinates, test
+     * placement starts around absolute Y -60, so local Y 200 lands around absolute 140, ~64 blocks of
+     * margin above the highest terrain seen) that it's always the topmost motion-blocking block
+     * findSpawnPosition's height query finds, regardless of whatever real (non-flat, despite this
+     * modded environment's GameTest world nominally using WorldPresets.FLAT) terrain sits below it.
+     * An all-air claimed area alone doesn't achieve this — air doesn't override real terrain that's
+     * already there. Must run before any trial in the calling test, not after.
+     */
+    private static void flattenGroundAtBeaconLevel(GameTestHelper helper) {
+        for (int x = 0; x < 160; x++) {
+            for (int z = 0; z < 160; z++) {
+                helper.setBlock(new BlockPos(x, FLOOR_LOCAL_Y, z), Blocks.STONE.defaultBlockState());
+            }
+        }
+    }
+
+    @GameTest(template = "spawn_placement_area")
     public static void nearBiasMatchesExpectedProportionAndRespectsBuffer(GameTestHelper helper) {
         GTRiftConfig.INSTANCE.safeBufferDistance = 20;
         GTRiftConfig.INSTANCE.spawnRadius = 60;
@@ -59,8 +106,9 @@ public class RiftSpawnPlacementTest {
         double nearBandMax = buffer + (radius - buffer) * bandFraction;
         double expectedNearPercent = nearChance + (100.0 - nearChance) * bandFraction;
 
+        flattenGroundAtBeaconLevel(helper);
         ServerLevel level = helper.getLevel();
-        BlockPos beaconPos = helper.absolutePos(new BlockPos(0, 1, 0));
+        BlockPos beaconPos = helper.absolutePos(new BlockPos(80, BEACON_LOCAL_Y, 80));
         RandomSource random = RandomSource.create();
 
         int validCount = 0;
@@ -97,7 +145,7 @@ public class RiftSpawnPlacementTest {
         helper.succeed();
     }
 
-    @GameTest(template = "empty")
+    @GameTest(template = "spawn_placement_area")
     public static void zeroNearChanceMatchesOldUniformBehavior(GameTestHelper helper) {
         GTRiftConfig.INSTANCE.safeBufferDistance = 20;
         GTRiftConfig.INSTANCE.spawnRadius = 60;
@@ -112,8 +160,9 @@ public class RiftSpawnPlacementTest {
         // own share of that range — no bias contribution at all.
         double expectedNearPercent = bandFraction * 100.0;
 
+        flattenGroundAtBeaconLevel(helper);
         ServerLevel level = helper.getLevel();
-        BlockPos beaconPos = helper.absolutePos(new BlockPos(0, 1, 0));
+        BlockPos beaconPos = helper.absolutePos(new BlockPos(80, BEACON_LOCAL_Y, 80));
         RandomSource random = RandomSource.create();
 
         int validCount = 0;
@@ -144,7 +193,7 @@ public class RiftSpawnPlacementTest {
     // Distance bias disabled (nearSpawnChancePercent=0) for both slant tests below, to isolate the
     // angular effect from the already-verified distance effect — they're independent axes.
 
-    @GameTest(template = "empty")
+    @GameTest(template = "spawn_placement_area")
     public static void slantBiasMatchesExpectedProportion(GameTestHelper helper) {
         GTRiftConfig.INSTANCE.safeBufferDistance = 20;
         GTRiftConfig.INSTANCE.spawnRadius = 60;
@@ -159,8 +208,9 @@ public class RiftSpawnPlacementTest {
         // the full circle.
         double expectedInArcPercent = slantChance + (100.0 - slantChance) * arcFraction;
 
+        flattenGroundAtBeaconLevel(helper);
         ServerLevel level = helper.getLevel();
-        BlockPos beaconPos = helper.absolutePos(new BlockPos(0, 1, 0));
+        BlockPos beaconPos = helper.absolutePos(new BlockPos(80, BEACON_LOCAL_Y, 80));
         BlockPos riftDirectionPos = beaconPos.offset(100, 0, 0); // due "+X", angle = 0 exactly
         RandomSource random = RandomSource.create();
 
@@ -190,7 +240,7 @@ public class RiftSpawnPlacementTest {
         helper.succeed();
     }
 
-    @GameTest(template = "empty")
+    @GameTest(template = "spawn_placement_area")
     public static void zeroSlantChanceProducesUniformAngles(GameTestHelper helper) {
         GTRiftConfig.INSTANCE.safeBufferDistance = 20;
         GTRiftConfig.INSTANCE.spawnRadius = 60;
@@ -203,8 +253,9 @@ public class RiftSpawnPlacementTest {
         // share of the full circle — no bias contribution at all.
         double expectedInArcPercent = arcFraction * 100.0;
 
+        flattenGroundAtBeaconLevel(helper);
         ServerLevel level = helper.getLevel();
-        BlockPos beaconPos = helper.absolutePos(new BlockPos(0, 1, 0));
+        BlockPos beaconPos = helper.absolutePos(new BlockPos(80, BEACON_LOCAL_Y, 80));
         BlockPos riftDirectionPos = beaconPos.offset(100, 0, 0);
         RandomSource random = RandomSource.create();
 
@@ -232,7 +283,7 @@ public class RiftSpawnPlacementTest {
         helper.succeed();
     }
 
-    @GameTest(template = "empty")
+    @GameTest(template = "spawn_placement_area")
     public static void nullRiftDirectionDisablesSlantEntirely(GameTestHelper helper) {
         GTRiftConfig.INSTANCE.safeBufferDistance = 20;
         GTRiftConfig.INSTANCE.spawnRadius = 60;
@@ -243,8 +294,9 @@ public class RiftSpawnPlacementTest {
         double arcFraction = GTRiftConfig.INSTANCE.riftSlantArcDegrees / 360.0;
         double expectedInArcPercent = arcFraction * 100.0;
 
+        flattenGroundAtBeaconLevel(helper);
         ServerLevel level = helper.getLevel();
-        BlockPos beaconPos = helper.absolutePos(new BlockPos(0, 1, 0));
+        BlockPos beaconPos = helper.absolutePos(new BlockPos(80, BEACON_LOCAL_Y, 80));
         RandomSource random = RandomSource.create();
 
         int validCount = 0;

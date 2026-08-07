@@ -176,3 +176,17 @@ tasks.named('processResources', ProcessResources).configure {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+
+// runGameTestServer reuses run/gametest/world across invocations rather than regenerating it —
+// confirmed real, not assumed: GameTestServer's own bootstrap never clears structures/entities before
+// running, and nothing else here did either. Real bug this caused: leftover ItemEntitys from a
+// previous run's mob-kill tests were still sitting in the (fixed, deterministic-grid) test positions
+// on the next run, making "exactly N item entities near this position" assertions fail with a
+// climbing count across separate runs (see RiftLootDropTest.taggedMobDropsShardUntaggedDropsVanillaLoot,
+// plans/rift_version_2.txt). Wiping the save before every run is the general fix — any test asserting
+// an exact entity/item count near a fixed position is vulnerable to this, not just that one.
+tasks.named('runGameTestServer').configure {
+    doFirst {
+        delete file('run/gametest/world')
+    }
+}
